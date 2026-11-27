@@ -1,0 +1,31 @@
+# 복사해서 config/config.toml 로 저장 후 수정하세요. (환경변수 BIF_CONFIG 로 다른 경로 지정 가능)
+# 같은 항목을 환경변수 BIF_<섹션>_<키> 로도 덮어쓸 수 있습니다. 예: BIF_DATABASE_URL
+
+[database]
+# SQLite (기본): 파일 하나로 시작
+url = "sqlite:///./data/app.db"
+# PostgreSQL 로 전환: 드라이버(psycopg) 설치 후
+# url = "postgresql+psycopg://user:password@127.0.0.1:5432/bif"
+echo = false
+
+[server]
+host = "0.0.0.0"
+port = 8000
+# frontend_dist = "C:/bif/frontend/dist"
+
+[auth]
+secret_key = "반드시-긴-임의-문자열로-바꾸세요"
+token_ttl_minutes = 720
+initial_admin_username = "admin"
+initial_admin_password = "admin1234"   # 최초 로그인 후 변경
+
+[llm]
+# 로컬 Ollama 만 사용합니다. 외부 주소를 넣지 마세요.
+ollama_url = "http://localhost:11434"
+model = "qwen2.5:7b-instruct"          # 반입한 모델 이름으로 변경
+temperature = 0.1
+num_ctx = 8192
+timeout_seconds = 120
+
+[scheduler]
+enabled = true

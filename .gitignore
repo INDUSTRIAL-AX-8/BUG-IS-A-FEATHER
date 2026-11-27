@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# 데이터 / 로컬 설정
+data/
+config/config.toml
+*.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# 오프라인 번들 산출물
+offline_bundle/

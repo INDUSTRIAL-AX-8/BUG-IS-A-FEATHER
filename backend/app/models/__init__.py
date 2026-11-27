@@ -1,0 +1,70 @@
+"""모든 모델을 여기서 import 해 metadata 에 등록한다 (Alembic autogenerate 용)."""
+
+from app.models.defect import AuditLog, CandidateSnapshot, DefectJudgment, RootCauseConfirmation
+from app.models.enums import (
+    ChartType,
+    ForecastStatus,
+    ItemCategory,
+    LotStatus,
+    NodeType,
+    Role,
+    node_key,
+    parse_node_key,
+)
+from app.models.master import (
+    Characteristic,
+    ConditionDefinition,
+    DefectType,
+    Equipment,
+    ItemType,
+    ProcessStep,
+    ProductDesign,
+    ProductDesignComponent,
+    ProductDesignStep,
+)
+from app.models.system import MappingTemplate, Setting, User
+from app.models.transaction import (
+    ConditionValue,
+    ControlLimit,
+    ForecastResult,
+    GenealogyEdge,
+    Lot,
+    Measurement,
+    ProcessRun,
+    SpcViolation,
+)
+
+__all__ = [
+    "AuditLog",
+    "CandidateSnapshot",
+    "Characteristic",
+    "ChartType",
+    "ConditionDefinition",
+    "ConditionValue",
+    "ControlLimit",
+    "DefectJudgment",
+    "DefectType",
+    "Equipment",
+    "ForecastResult",
+    "ForecastStatus",
+    "GenealogyEdge",
+    "ItemCategory",
+    "ItemType",
+    "Lot",
+    "LotStatus",
+    "MappingTemplate",
+    "Measurement",
+    "NodeType",
+    "ProcessRun",
+    "ProcessStep",
+    "ProductDesign",
+    "ProductDesignComponent",
+    "ProductDesignStep",
+    "Role",
+    "RootCauseConfirmation",
+    "Setting",
+    "SpcViolation",
+    "User",
+    "node_key",
+    "parse_node_key",
+]
