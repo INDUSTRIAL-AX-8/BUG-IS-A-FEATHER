@@ -86,9 +86,10 @@ def runs_for_lots(db: Session, lot_ids: list[int]) -> list[ProcessRunOut]:
                     name=cd.name,
                     unit=cd.unit,
                     value=cv.value,
-                    min_value=cd.min_value,
-                    max_value=cd.max_value,
-                    out_of_range=is_out_of_range(cv.value, cd.min_value, cd.max_value),
+                    min_value=cd.effective_range()[0],
+                    max_value=cd.effective_range()[1],
+                    learned_range=cd.effective_range()[2],
+                    out_of_range=is_out_of_range(cv.value, *cd.effective_range()[:2]),
                 )
             )
     return [

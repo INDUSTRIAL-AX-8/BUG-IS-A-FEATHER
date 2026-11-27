@@ -68,6 +68,9 @@ class Context:
     defect_type_id: int | None
     as_of: datetime | None
     max_depth: int
+    # 수량 가중: 판정에 불량 수량이 있으면 LOT 수 대신 생산·불량 '개수'로 비교 (집계 기록)
+    unit_n: dict[int, float] | None = None
+    unit_k: dict[int, float] | None = None
 
 
 def _population(db: Session, start: datetime, end: datetime, exclude: int) -> set[int]:
@@ -83,6 +86,24 @@ def _defective(db: Session, population: set[int], as_of: datetime | None) -> set
     if as_of is not None:
         stmt = stmt.where(DefectJudgment.judged_at <= as_of)
     return {i for i in db.scalars(stmt) if i in population}
+
+
+def _unit_weights(db: Session, population: set[int], as_of: datetime | None):
+    """모집단에 불량 수량이 기록된 판정이 있으면 (LOT→생산 수, LOT→불량 수), 없으면 (None, None)."""
+    stmt = select(DefectJudgment.lot_id, DefectJudgment.defect_qty).where(DefectJudgment.is_cancelled.is_(False))
+    if as_of is not None:
+        stmt = stmt.where(DefectJudgment.judged_at <= as_of)
+    rows = [(lid, q) for lid, q in db.execute(stmt) if lid in population]
+    if not any(q is not None for _, q in rows):
+        return None, None
+    ids = list(population)
+    qty: dict[int, float] = {}
+    for i in range(0, len(ids), 500):
+        qty.update({lid: float(q or 1.0) for lid, q in db.execute(select(Lot.id, Lot.qty).where(Lot.id.in_(ids[i:i + 500])))})
+    k: dict[int, float] = defaultdict(float)
+    for lid, q in rows:
+        k[lid] = min(qty.get(lid, 1.0), k[lid] + (float(q) if q is not None else qty.get(lid, 1.0)))
+    return qty, dict(k)
 
 
 def _descendants(ctx: Context, seeds: set[int], cache: dict) -> set[int]:
@@ -104,7 +125,10 @@ def _runs_lots(ctx: Context, *, equipment_id=None, step_id=None, start=None, end
 
 def _cond_out_lots(ctx: Context, cond_id: int) -> set[int]:
     d = ctx.g.conditions.get(cond_id)
-    if d is None or (d.min_value is None and d.max_value is None):
+    if d is None:
+        return set()
+    lo, hi, _ = d.effective_range()
+    if lo is None and hi is None:
         return set()
     rows = ctx.db.execute(
         select(ProcessRun.lot_id, ConditionValue.value)
@@ -114,7 +138,7 @@ def _cond_out_lots(ctx: Context, cond_id: int) -> set[int]:
             ProcessRun.started_at >= ctx.window[0], ProcessRun.started_at <= ctx.window[1],
         )
     )
-    return {lot for lot, v in rows if is_out_of_range(v, d.min_value, d.max_value)}
+    return {lot for lot, v in rows if is_out_of_range(v, lo, hi)}
 
 
 def _eq_window(ctx: Context, runs: list[ts.RunInfo]) -> tuple[datetime, datetime]:
@@ -143,7 +167,7 @@ def analyze(
     population = _population(db, *window, exclude=lot.id)
     ctx = Context(db, g, cfg, weights, window, timedelta(days=cfg["downstream_window_days"]),
                   population, _defective(db, population, as_of), defect_type_id, as_of,
-                  cfg["max_trace_depth"])
+                  cfg["max_trace_depth"], *_unit_weights(db, population, as_of))
 
     by_node = g.runs_by_node()
     graph = ts.graph_payload(g)
@@ -166,7 +190,7 @@ def analyze(
             share = None
         else:
             lift = _lift_factor(ctx, seeds, desc_cache)
-            share = lift.raw["exposed_n"] / len(ctx.population) if ctx.population else None
+            share = lift.raw.get("exposed_share")
         factors = {
             "spc": _spc_factor(ctx, ntype, nid, runs, seeds, violations),
             "lift": lift,
@@ -232,23 +256,33 @@ def _exposure_seeds(ctx: Context, ntype: NodeType, nid: int, runs: list[ts.RunIn
 def _lift_factor(ctx: Context, seeds: set[int], cache: dict) -> FactorResult:
     exposed = (_descendants(ctx, seeds, cache) | seeds) & ctx.population if seeds else set()
     other = ctx.population - exposed
-    st = lift_stats(
-        len(exposed & ctx.defective), len(exposed), len(other & ctx.defective), len(other),
-        ctx.cfg["beta_prior_alpha"], ctx.cfg["beta_prior_beta"],
-    )
+    if ctx.unit_n is not None:
+        un, uk = ctx.unit_n, ctx.unit_k or {}
+        en, ek = sum(un.get(i, 1.0) for i in exposed), sum(uk.get(i, 0.0) for i in exposed)
+        on, ok = sum(un.get(i, 1.0) for i in other), sum(uk.get(i, 0.0) for i in other)
+        st = lift_stats(round(ek), round(en), round(ok), round(on), ctx.cfg["beta_prior_alpha"], ctx.cfg["beta_prior_beta"])
+        share = en / (en + on) if (en + on) else None
+    else:
+        st = lift_stats(
+            len(exposed & ctx.defective), len(exposed), len(other & ctx.defective), len(other),
+            ctx.cfg["beta_prior_alpha"], ctx.cfg["beta_prior_beta"],
+        )
+        share = len(exposed) / len(ctx.population) if ctx.population else None
     raw = {
+        "unit": "개" if ctx.unit_n is not None else "LOT", "exposed_share": share,
         "exposed_n": st.exposed_n, "exposed_defects": st.exposed_defects,
         "other_n": st.other_n, "other_defects": st.other_defects,
         "rate_exposed": st.rate_exposed, "rate_other": st.rate_other,
         "lift": st.raw_lift, "smoothed_lift": st.smoothed_lift, "p_value": st.p_value,
     }
+    unit = "개" if ctx.unit_n is not None else ""
     if st.exposed_n == 0:
         note = "이 노드를 거친 완제품이 분석 기간에 없음"
     elif st.other_n == 0:
         note = f"분석 기간 완제품 {st.exposed_n}개 전부가 거쳐 비교군이 없음"
     else:
-        note = (f"거친 제품 {st.exposed_defects}/{st.exposed_n} 불량 vs 거치지 않은 제품 "
-                f"{st.other_defects}/{st.other_n}" + (f", p={st.p_value:.3g}" if st.p_value is not None else ""))
+        note = (f"거친 제품 {st.exposed_defects}/{st.exposed_n}{unit} 불량 vs 거치지 않은 제품 "
+                f"{st.other_defects}/{st.other_n}{unit}" + (f", p={st.p_value:.3g}" if st.p_value is not None else ""))
     return FactorResult(lift_score(st, ctx.cfg["lift_saturation"]), raw, note)
 
 
@@ -319,7 +353,8 @@ def _condition_factor(ctx, ntype, nid, runs) -> FactorResult:
         d = ctx.g.conditions.get(nid)
         values = [round(r.out_of_range[nid], 4) for r in out]
         raw = {"runs": len(relevant), "out_of_range": len(out), "values": values[:10],
-               "range": [d.min_value, d.max_value] if d else None}
+               "range": list(d.effective_range()[:2]) if d else None,
+               "learned_range": bool(d and d.effective_range()[2])}
     else:
         relevant = runs
         out = [r for r in runs if r.out_of_range]

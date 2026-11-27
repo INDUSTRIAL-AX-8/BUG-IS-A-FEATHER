@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    DateTime,
     Enum,
     Float,
     ForeignKey,
@@ -73,7 +75,22 @@ class ConditionDefinition(Base):
     min_value: Mapped[float | None] = mapped_column(Float)
     max_value: Mapped[float | None] = mapped_column(Float)
     process_step_id: Mapped[int | None] = mapped_column(ForeignKey("process_step.id"))
+    # measured(측정값) / setpoint(설정값) — 분석 결과 해석에 사용 (null = 구분 없음)
+    value_kind: Mapped[str | None] = mapped_column(String(20))
+    # 요인 분석이 데이터에서 학습한 범위 (허용 범위가 정의되지 않은 항목의 이탈 판정에 사용)
+    learned_min: Mapped[float | None] = mapped_column(Float)
+    learned_max: Mapped[float | None] = mapped_column(Float)
+    learned_at: Mapped[datetime | None] = mapped_column(DateTime)
+    learned_note: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    def effective_range(self) -> tuple[float | None, float | None, bool]:
+        """(하한, 상한, 학습 범위 여부). 정의된 허용 범위가 있으면 그것을 우선한다."""
+        if self.min_value is not None or self.max_value is not None:
+            return self.min_value, self.max_value, False
+        if self.learned_min is not None or self.learned_max is not None:
+            return self.learned_min, self.learned_max, True
+        return None, None, False
 
 
 class Characteristic(Base):

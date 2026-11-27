@@ -74,6 +74,24 @@ TRACE: dict[str, Any] = {
     "max_nodes": 3000,
 }
 
+# 요인 분석(집계 공정 기록·LOT 단위 공통)
+DRIVER_ANALYSIS: dict[str, Any] = {
+    "min_rows": 8,  # 분석에 필요한 최소 행(시간·run) 수
+    "alpha": 0.05,  # 유의수준
+    "max_model_terms": 3,  # 다변량 모형에 넣을 최대 요인 수
+    "collinearity_r": 0.95,  # 이 이상 상관이면 같은 정보로 보고 분리 불가 처리
+    "explained_shrink": 0.5,  # 보정 후 효과가 이 비율 이상 줄면 '다른 요인으로 설명됨'
+    "onset_baseline_rows": 4,  # 변화 시작점 판단 기준 구간(처음 n행)
+    "onset_sigma": 3.0,  # 기준 구간 평균 + kσ 를 넘으면 변화 시작
+    "event_window_rows": 3,  # 설비 이벤트 전후 비교 행 수
+    "similar_tolerance_sigma": 0.5,  # 교란 확인: 주요인 값이 이 σ 안에서 같은 행끼리 비교
+    "matched_rel_diff": 0.25,  # 같은 조건 비교에서 수준 간 불량률 차이가 이 비율 이하면 '설명됨'
+    "discrete_levels": 3,  # 고유값이 이 개수 이하인 연속 요인(설정값 등)도 수준으로 비교
+    "min_deviance_gain": 0.03,  # 다변량에 넣으려면 설명력(이탈도)을 이 비율 이상 더해야 함 (실질 유의성)
+    "min_type_rows": 3,  # 불량 유형-요인 연관을 볼 최소 행 수
+    "learn_ranges": True,  # 유의한 연속 요인의 학습 범위를 조건 항목에 기록
+}
+
 SETTING_DEFAULTS: dict[str, Any] = {
     "nelson_rules": NELSON_RULES,
     "control_chart": CONTROL_CHART,
@@ -81,4 +99,8 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "cause_scoring": CAUSE_SCORING,
     "forecast": FORECAST,
     "trace": TRACE,
+    "driver_analysis": DRIVER_ANALYSIS,
+    "dataset_notes": {},  # 설비 이름 → 데이터 주의사항 목록 (가져오기 시 기록)
+    # 화면 용어 프리셋 (general | injection | diecasting) + 개별 덮어쓰기. 현장 도메인 용어로 화면을 바꾼다
+    "terminology": {"preset": "general", "overrides": {}},
 }

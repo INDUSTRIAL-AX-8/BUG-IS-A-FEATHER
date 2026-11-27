@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { Empty, Field, Loading, PageHead, Panel } from '../components/ui'
 import { CATEGORY_LABEL, CHART_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { useTerms } from '../lib/terms'
 
 type Kind = 'text' | 'number' | 'bool' | 'select' | 'textarea'
 interface Col { key: string; label: string; kind: Kind; options?: () => { value: string | number; label: string }[]; required?: boolean; width?: number; nullable?: boolean }
@@ -14,6 +15,7 @@ type Row = Record<string, unknown> & { id: number }
 
 export function MasterPage() {
   const { can } = useAuth()
+  const { t } = useTerms()
   const items = useAsync(() => api.get<ItemType[]>('/item-types'), [])
   const steps = useAsync(() => api.get<ProcessStep[]>('/process-steps'), [])
   const itemOpts = () => (items.data ?? []).map((i) => ({ value: i.id, label: i.name }))
@@ -32,24 +34,25 @@ export function MasterPage() {
       { key: 'description', label: '설명', kind: 'text', nullable: true },
       { key: 'is_active', label: '사용', kind: 'bool', width: 60 },
     ] },
-    { key: 'eq', label: '설비', path: '/equipment', defaults: { is_active: true }, cols: [
+    { key: 'eq', label: t('equipment'), path: '/equipment', defaults: { is_active: true }, cols: [
       { key: 'name', label: '이름', kind: 'text', required: true },
-      { key: 'process_step_id', label: '소속 공정', kind: 'select', options: stepOpts, nullable: true },
+      { key: 'process_step_id', label: `소속 ${t('step')}`, kind: 'select', options: stepOpts, nullable: true },
       { key: 'pos_x', label: 'X', kind: 'number', nullable: true, width: 60 },
       { key: 'pos_y', label: 'Y', kind: 'number', nullable: true, width: 60 },
       { key: 'pos_z', label: 'Z', kind: 'number', nullable: true, width: 60 },
       { key: 'model_path', label: '3D 모델 경로', kind: 'text', nullable: true },
       { key: 'is_active', label: '사용', kind: 'bool', width: 60 },
     ] },
-    { key: 'cond', label: '작업 조건 항목', path: '/condition-definitions', defaults: { is_active: true }, cols: [
+    { key: 'cond', label: `${t('condition')} 항목`, path: '/condition-definitions', defaults: { is_active: true }, cols: [
       { key: 'name', label: '이름', kind: 'text', required: true },
       { key: 'unit', label: '단위', kind: 'text', nullable: true, width: 70 },
       { key: 'min_value', label: '허용 하한', kind: 'number', nullable: true, width: 90 },
       { key: 'max_value', label: '허용 상한', kind: 'number', nullable: true, width: 90 },
+      { key: 'value_kind', label: '값 종류', kind: 'select', options: () => [{ value: 'measured', label: '측정값' }, { value: 'setpoint', label: '설정값' }], nullable: true, width: 80 },
       { key: 'process_step_id', label: '공정', kind: 'select', options: stepOpts, nullable: true },
       { key: 'is_active', label: '사용', kind: 'bool', width: 60 },
     ] },
-    { key: 'char', label: '측정 특성', path: '/characteristics', defaults: { subgroup_size: 1, chart_type: 'AUTO', baseline_scope: 'GLOBAL', is_active: true }, cols: [
+    { key: 'char', label: t('characteristic'), path: '/characteristics', defaults: { subgroup_size: 1, chart_type: 'AUTO', baseline_scope: 'GLOBAL', is_active: true }, cols: [
       { key: 'name', label: '이름', kind: 'text', required: true },
       { key: 'unit', label: '단위', kind: 'text', nullable: true, width: 60 },
       { key: 'item_type_id', label: '부품 종류', kind: 'select', options: itemOpts, nullable: true },
@@ -69,7 +72,7 @@ export function MasterPage() {
       { key: 'is_active', label: '사용', kind: 'bool', width: 60 },
     ] },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [items.data, steps.data])
+  ], [items.data, steps.data, t])
 
   const [tabKey, setTabKey] = useState('item')
   const tab = tabs.find((t) => t.key === tabKey)!

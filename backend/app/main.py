@@ -28,6 +28,7 @@ def _routers() -> list[APIRouter]:
         "app.api.ingest",
         "app.api.events",
         "app.api.accuracy",
+        "app.api.analysis",
     ):
         try:
             module = __import__(module_name, fromlist=["router"])

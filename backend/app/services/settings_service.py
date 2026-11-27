@@ -41,8 +41,10 @@ def put_setting(db: Session, key: str, value: Any, user: User | None) -> Any:
         raise AppError(422, "설정 값은 항목별 키-값 형태여야 합니다.")
     if isinstance(default, dict):
         unknown = set(value) - set(default)
-        if unknown and key != "nelson_rules":
+        if unknown and key not in ("nelson_rules", "dataset_notes"):
             raise AppError(422, f"알 수 없는 설정 키입니다: {', '.join(sorted(unknown))}")
+    if key == "terminology" and value.get("preset", "general") not in ("general", "injection", "diecasting"):
+        raise AppError(422, "용어 프리셋은 general, injection, diecasting 중 하나여야 합니다.")
     if key == "nelson_rules":
         from app.core.spc.nelson import validate_config
 

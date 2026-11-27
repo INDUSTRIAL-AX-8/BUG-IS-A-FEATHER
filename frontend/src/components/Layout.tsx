@@ -2,20 +2,23 @@ import { useState, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { ROLE_LABEL } from '../lib/format'
+import { useTerms, type TermKey } from '../lib/terms'
 import { ChatPanel } from './ChatPanel'
 
-const NAV: { to: string; label: string; num: string }[] = [
+const NAV: { to: string; label: string; num: string; term?: TermKey }[] = [
   { to: '/', label: '대시보드', num: '1' },
-  { to: '/genealogy', label: '계보 그래프', num: '2' },
-  { to: '/spc', label: '관리도', num: '3' },
-  { to: '/defects', label: '불량 판정', num: '4' },
-  { to: '/master', label: '마스터 관리', num: '5' },
-  { to: '/upload', label: '데이터 업로드', num: '6' },
-  { to: '/settings', label: '설정', num: '7' },
+  { to: '/drivers', label: '요인 분석', num: '2', term: 'drivers' },
+  { to: '/genealogy', label: '계보 그래프', num: '3', term: 'genealogyGraph' },
+  { to: '/spc', label: '관리도', num: '4' },
+  { to: '/defects', label: '불량 판정', num: '5', term: 'defectJudgment' },
+  { to: '/master', label: '마스터 관리', num: '6' },
+  { to: '/upload', label: '데이터 업로드', num: '7' },
+  { to: '/settings', label: '설정', num: '8' },
 ]
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
+  const { t } = useTerms()
   const [chatOpen, setChatOpen] = useState(false)
   return (
     <div className={`app ${chatOpen ? 'with-chat' : ''}`}>
@@ -34,7 +37,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === '/'}>
             <span className="num">{n.num}</span>
-            {n.label}
+            {n.term ? t(n.term) : n.label}
           </NavLink>
         ))}
         <div className="sep" />

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -58,6 +59,7 @@ class ConditionDefinitionIn(BaseModel):
     min_value: float | None = None
     max_value: float | None = None
     process_step_id: int | None = None
+    value_kind: str | None = Field(default=None, pattern="^(measured|setpoint)$")
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -69,6 +71,10 @@ class ConditionDefinitionIn(BaseModel):
 
 class ConditionDefinitionOut(ConditionDefinitionIn, ORM):
     id: int
+    learned_min: float | None = None
+    learned_max: float | None = None
+    learned_at: datetime | None = None
+    learned_note: str | None = None
 
 
 # ---- Characteristic

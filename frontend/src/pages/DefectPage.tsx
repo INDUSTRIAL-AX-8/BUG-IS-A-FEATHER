@@ -8,9 +8,11 @@ import { ScoreDetail } from '../components/ScoreDetail'
 import { Empty, Field, Loading, PageHead, Panel, ScoreBar, StatusBadge } from '../components/ui'
 import { fmtDateTime, NODE_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { useTerms } from '../lib/terms'
 
 export function DefectPage() {
   const { can } = useAuth()
+  const { t } = useTerms()
   const types = useAsync(() => api.get<DefectType[]>('/defect-types', { active_only: true }), [])
   const recent = useAsync(() => api.get<Judgment[]>('/defects', { limit: 50 }), [])
   const lotRef = useRef<HTMLInputElement>(null)
@@ -62,13 +64,13 @@ export function DefectPage() {
 
   return (
     <>
-      <PageHead title="불량 판정" sub="LOT 번호 입력(바코드 스캔 가능) → 불량 유형 선택 → 저장. 저장 즉시 원인 후보를 계산합니다." />
+      <PageHead title={t('defectJudgment')} sub={`${t('scanHint')} → 불량 유형 선택 → 저장. 저장 즉시 원인 후보를 계산합니다.`} />
       <div className="grid cols-2">
         <div className="stack">
-          <Panel title="판정 입력">
+          <Panel title={`${t('defectJudgment')} 입력`}>
             {!can('OPERATOR') && <div className="notice warn" style={{ marginBottom: 8 }}>조회자는 판정을 저장할 수 없습니다.</div>}
             <form onSubmit={lookup} className="row" style={{ alignItems: 'end' }}>
-              <Field label="LOT 번호" style={{ flex: 1 }}>
+              <Field label={t('lotNo')} style={{ flex: 1 }}>
                 <input ref={lotRef} className="big" value={lotNo} onChange={(e) => setLotNo(e.target.value)} placeholder="스캔하거나 입력 후 Enter" />
               </Field>
               <button type="submit" style={{ height: 42 }}>조회</button>
@@ -99,7 +101,7 @@ export function DefectPage() {
           </Panel>
 
           {result && (
-            <Panel title={`원인 후보 · ${result.judgment.lot_no}`} actions={<Link to={`/genealogy?lot=${encodeURIComponent(result.judgment.lot_no)}`}>계보 그래프에서 보기</Link>} flush>
+            <Panel title={`원인 후보 · ${result.judgment.lot_no}`} actions={<Link to={`/genealogy?lot=${encodeURIComponent(result.judgment.lot_no)}`}>{t('genealogyGraph')}에서 보기</Link>} flush>
               <table className="t">
                 <thead><tr><th style={{ width: 40 }}>순위</th><th style={{ width: 50 }}>종류</th><th>노드</th><th style={{ width: 120 }}>점수</th></tr></thead>
                 <tbody>
@@ -122,7 +124,7 @@ export function DefectPage() {
           <Loading error={recent.error} loading={recent.loading && !recent.data} />
           <div className="table-wrap" style={{ maxHeight: 'calc(100vh - 180px)' }}>
             <table className="t">
-              <thead><tr><th style={{ width: 130 }}>판정 시각</th><th>LOT</th><th>불량 유형</th><th style={{ width: 80 }}>판정자</th><th>확정 원인</th></tr></thead>
+              <thead><tr><th style={{ width: 130 }}>판정 시각</th><th>{t('lot')}</th><th>불량 유형</th><th style={{ width: 80 }}>판정자</th><th>확정 원인</th></tr></thead>
               <tbody>
                 {(recent.data ?? []).map((j) => (
                   <tr key={j.id}>

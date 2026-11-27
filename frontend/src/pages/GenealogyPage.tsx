@@ -9,12 +9,14 @@ import { ScoreDetail } from '../components/ScoreDetail'
 import { Empty, Field, Loading, PageHead, Panel, ScoreBar, StatusBadge } from '../components/ui'
 import { CATEGORY_LABEL, fmtDateTime, NODE_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { useTerms } from '../lib/terms'
 
 const ALL_TYPES: NodeKind[] = ['LOT', 'STEP', 'EQUIPMENT', 'CONDITION']
 const TOP_N = 5
 
 export function GenealogyPage() {
   const [params, setParams] = useSearchParams()
+  const { t } = useTerms()
   const lotNo = params.get('lot') ?? ''
   const [input, setInput] = useState(lotNo)
   const [depth, setDepth] = useState(Number(params.get('depth')) || 6)
@@ -49,20 +51,20 @@ export function GenealogyPage() {
 
   return (
     <>
-      <PageHead title="계보 그래프" sub="불량 LOT 에서 거슬러 올라가 원인 후보를 찾고, 후보를 공유하는 하위 LOT(잠재 불량 범위)를 확인합니다." />
+      <PageHead title={t('genealogyGraph')} sub={`불량 ${t('lot')}에서 거슬러 올라가 원인 후보를 찾고, 같은 원인을 거친 ${t('lot')}(${t('impact')})을 확인합니다.`} />
       <Panel>
         <form className="form-row" onSubmit={go}>
-          <Field label="LOT 번호"><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="예: P-260922-02-1" style={{ width: 220 }} /></Field>
+          <Field label={t('lotNo')}><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="예: P-260922-02-1" style={{ width: 220 }} /></Field>
           <button className="primary" type="submit">조회</button>
           <Field label={`추적 깊이 ${depth}`}>
             <input type="range" min={1} max={12} value={depth} onChange={(e) => setDepth(Number(e.target.value))} style={{ width: 140, padding: 0 }} />
           </Field>
           <Field label="방향">
             <div className="row">
-              <button type="button" className={direction === 'up' ? 'primary' : ''} onClick={() => setDownNode(null)}>역방향 (원인)</button>
+              <button type="button" className={direction === 'up' ? 'primary' : ''} onClick={() => setDownNode(null)}>{t('upstream')}</button>
               <button type="button" className={direction === 'down' ? 'primary' : ''} disabled={!a}
                 onClick={() => a && setDownNode(a.graph.nodes.find((n) => n.id === (selected ?? a.candidates[0]?.node)) ?? null)}>
-                정방향 (영향 범위)
+                {t('downstream')}
               </button>
             </div>
           </Field>
@@ -92,7 +94,7 @@ export function GenealogyPage() {
       </Panel>
 
       <div style={{ height: 12 }} />
-      {!lotNo && <Panel><Empty>LOT 번호를 입력하세요. 관리도·대시보드의 LOT 링크로도 들어올 수 있습니다.</Empty></Panel>}
+      {!lotNo && <Panel><Empty>{t('lotNo')}를 입력하세요. 관리도·대시보드·{t('drivers')}의 링크로도 들어올 수 있습니다.</Empty></Panel>}
       {lotNo && !a && <Panel><Loading error={analysis.error} loading={analysis.loading} /></Panel>}
       {a && direction === 'up' && (
         <div className="split-right">

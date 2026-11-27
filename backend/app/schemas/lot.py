@@ -54,6 +54,7 @@ class ConditionValueOut(BaseModel):
     value: float
     min_value: float | None
     max_value: float | None
+    learned_range: bool = False  # 허용 범위가 아니라 요인 분석이 학습한 범위로 판정
     out_of_range: bool
 
 

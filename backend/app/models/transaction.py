@@ -178,3 +178,17 @@ class ForecastResult(Base):
     expected_breach_step: Mapped[int | None] = mapped_column(Integer)
     expected_breach_at: Mapped[datetime | None] = mapped_column(DateTime)
     trend: Mapped[str | None] = mapped_column(String(10))  # up / down / flat
+
+
+class EquipmentEvent(Base):
+    """설비 정지·정비·금형 교체 등 이벤트. 요인 분석의 전후 비교와 타임라인에 쓰인다."""
+
+    __tablename__ = "equipment_event"
+    __table_args__ = (Index("ix_equipment_event_time", "equipment_id", "started_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
+    kind: Mapped[str] = mapped_column(String(30))  # STOP / MAINTENANCE / MOLD_CHANGE / ...
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime)
+    note: Mapped[str | None] = mapped_column(String(500))

@@ -142,7 +142,7 @@ def test_non_local_llm_address_refused():
 def test_tool_list_endpoint(sample_ctx):
     names = {t["name"] for t in sample_ctx.client.get("/api/assistant/tools", headers=sample_ctx.h["viewer"]).json()}
     assert names == {"get_lot", "trace_upstream", "trace_downstream", "get_root_cause_candidates",
-                     "get_spc_violations", "get_watchlist", "search_defect_history"}
+                     "get_spc_violations", "get_watchlist", "search_defect_history", "get_process_drivers"}
 
 
 def test_each_tool_runs_directly(sample_ctx):

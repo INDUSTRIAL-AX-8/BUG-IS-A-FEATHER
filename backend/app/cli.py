@@ -48,6 +48,11 @@ def main(argv: list[str] | None = None) -> None:
     kamp.add_argument("--raw-dir", default=get_settings().kamp_raw_dir,
                       help="casting_equipment.csv, casting_quality.csv 가 있는 폴더")
     kamp.add_argument("--reset", action="store_true", help="기존 데이터를 지우고 가져오기")
+    plog = sub.add_parser("seed-process-log", help="집계형 공정 기록(CSV/Excel + 매핑 JSON) 가져오기")
+    plog.add_argument("--file", required=True)
+    plog.add_argument("--mapping", required=True)
+    plog.add_argument("--reset", action="store_true", help="기존 데이터를 지우고 가져오기")
+    plog.add_argument("--no-analysis", action="store_true", help="가져온 뒤 요인 분석을 실행하지 않음")
     sub.add_parser("serve", help="서버 실행")
     args = parser.parse_args(argv)
 
@@ -85,6 +90,26 @@ def main(argv: list[str] | None = None) -> None:
         print("KAMP 데이터 가져오기 완료.")
         for key, value in summary.summary().items():
             print(f"  {key}: {value}")
+    elif args.cmd == "seed-process-log":
+        from pathlib import Path
+
+        from app.db import SessionLocal
+        from app.sample.process_log import import_process_log, load_mapping
+
+        with SessionLocal() as db:
+            summary = import_process_log(db, Path(args.file), load_mapping(Path(args.mapping)), reset=args.reset)
+            print("공정 기록 가져오기 완료.")
+            for key, value in summary.summary().items():
+                print(f"  {key}: {value}")
+            if not args.no_analysis:
+                from app.services.driver_service import analyze_equipment
+
+                result = analyze_equipment(db, summary.equipment_id, apply_learned=True)
+                print()
+                print("[요인 분석 결론]")
+                print("  " + result["verdict"]["headline"])
+                for line in result["verdict"]["reasons"]:
+                    print(f"   - {line}")
     elif args.cmd == "serve":
         import uvicorn
 

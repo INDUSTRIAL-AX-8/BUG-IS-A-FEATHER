@@ -224,6 +224,27 @@ def search_defect_history(db: Session, defect_type: str | None = None, item_type
     }, refs
 
 
+def get_process_drivers(db: Session, equipment: str | None = None) -> tuple[dict, list[Ref]]:
+    """설비 기록 전체의 요인 분석 결론 (주요 원인 후보, 교란 판정, 근거, 권고)."""
+    from app.models import Equipment
+    from app.services.driver_service import analyze_equipment
+
+    stmt = select(Equipment)
+    if equipment:
+        stmt = stmt.where(Equipment.name.contains(str(equipment).strip()))
+    eqs = db.scalars(stmt).all()
+    if not eqs:
+        raise AppError(404, f"설비를 찾을 수 없습니다: {equipment}")
+    eq = eqs[0]
+    r = analyze_equipment(db, eq.id)
+    refs = [{"kind": "analysis", "id": eq.id, "label": f"{eq.name} 요인 분석", "link": f"/drivers?equipment={eq.id}"}]
+    return {
+        "equipment": eq.name, "status": r["status"], "verdict": r["verdict"],
+        "factors": [{"name": f["name"], "status": f.get("status"), "p": round(f["p"], 4)} for f in r["factors"]],
+        "learned_thresholds": r.get("thresholds"), "caveats": r["caveats"],
+    }, refs
+
+
 # ------------------------------------------------------------------ 스키마
 
 def _fn(name: str, desc: str, props: dict[str, Any], required: list[str]) -> dict:
@@ -253,7 +274,13 @@ TOOL_SCHEMAS = [
          "period": {"type": "string", "description": "'7d', '2w' 또는 '2026-03-01~2026-03-07'"}}, []),
 ]
 
+TOOL_SCHEMAS.append(_fn(
+    "get_process_drivers",
+    "설비 기록 전체에서 불량을 늘린 요인(조건·작업자)을 판정한 요인 분석 결론을 조회한다. '왜 불량이 늘었나', '작업자 탓인가' 같은 질문에 쓴다.",
+    {"equipment": {"type": "string", "description": "설비 이름 일부 (예: 사출기 3호)"}}, []))
+
 TOOLS: dict[str, Callable[..., tuple[dict, list[Ref]]]] = {
+    "get_process_drivers": get_process_drivers,
     "get_lot": get_lot,
     "trace_upstream": trace_upstream,
     "trace_downstream": trace_downstream,

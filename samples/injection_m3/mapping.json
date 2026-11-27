@@ -1,0 +1,71 @@
+{
+  "name": "사출기 3호 낮 조 공정 기록",
+  "equipment": "사출기 3호",
+  "process_step": "사출",
+  "item_type": {
+    "name": "사출품 (3호)",
+    "category": "FINISHED"
+  },
+  "lot_prefix": "IM3",
+  "row_hours": 1,
+  "time": {
+    "date": "날짜",
+    "time": "시각"
+  },
+  "operator": "맡은 사람",
+  "conditions": [
+    {
+      "column": "수지 온도(℃)",
+      "name": "수지 온도",
+      "unit": "℃",
+      "kind": "measured",
+      "characteristic": true
+    },
+    {
+      "column": "금형 온도(℃)",
+      "name": "금형 온도",
+      "unit": "℃",
+      "kind": "measured",
+      "characteristic": true
+    },
+    {
+      "column": "사출 압력(MPa)",
+      "name": "사출 압력 설정",
+      "unit": "MPa",
+      "kind": "setpoint"
+    },
+    {
+      "column": "냉각 시간(초)",
+      "name": "냉각 시간 설정",
+      "unit": "초",
+      "kind": "setpoint"
+    }
+  ],
+  "produced": "생산(개)",
+  "defects": "불량(개)",
+  "defect_type": {
+    "column": "많았던 불량",
+    "semantics": "top"
+  },
+  "defect_codes": {
+    "버": "FLASH",
+    "수축 자국": "SINK",
+    "미성형": "SHORT",
+    "웰드 라인": "WELD",
+    "휨": "WARP"
+  },
+  "stop": {
+    "column": "많았던 불량",
+    "contains": "멈춤",
+    "kind": "STOP",
+    "note": "사출기 1시간 정지 (조치 내용 기록 없음)"
+  },
+  "caveats": [
+    "불량 수는 현장에서 걸러 낸 것과 나중에 고객 반품으로 거슬러 맞춰 넣은 것의 합입니다.",
+    "'많았던 불량'은 그 시간에 가장 많았던 유형 하나뿐입니다. 그 시간의 불량이 모두 그 유형은 아닙니다.",
+    "수지·금형 온도는 1시간 평균 측정값, 사출 압력·냉각 시간은 설정값입니다.",
+    "3월 5일에는 기술자 1명이 쉬었고 다른 1명은 다른 사출기를 보았습니다 (그날 3호는 신입 단독).",
+    "이 기록은 3호 사출기 낮 조만 포함합니다. 다른 날, 다른 사출기의 불량은 원인이 다를 수 있습니다."
+  ],
+  "terminology": "injection"
+}

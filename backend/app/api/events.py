@@ -20,6 +20,7 @@ from app.models import (
     DefectJudgment,
     DefectType,
     Equipment,
+    EquipmentEvent,
     Lot,
     Measurement,
     ProcessRun,
@@ -29,7 +30,7 @@ from app.models import (
 
 router = APIRouter(tags=["이벤트(타임라인/3D)"])
 
-EVENT_TYPES = ("run_start", "run_end", "measurement", "violation", "judgment")
+EVENT_TYPES = ("run_start", "run_end", "measurement", "violation", "judgment", "equipment_event")
 
 
 @router.get("/events")
@@ -87,6 +88,13 @@ def events(
                        DefectJudgment.is_cancelled.is_(False)))
         for j, lot_no, code in db.execute(stmt.limit(limit)):
             out.append({"type": "judgment", "at": j.judged_at, "judgment_id": j.id, "lot_no": lot_no, "defect_type": code})
+    if "equipment_event" in wanted:
+        stmt = select(EquipmentEvent).where(EquipmentEvent.started_at >= start, EquipmentEvent.started_at <= end)
+        if equipment_id is not None:
+            stmt = stmt.where(EquipmentEvent.equipment_id == equipment_id)
+        for e in db.scalars(stmt.limit(limit)):
+            out.append({"type": "equipment_event", "at": e.started_at, "until": e.ended_at, "kind": e.kind,
+                        "note": e.note, "equipment": eq_info(e.equipment_id)})
     out.sort(key=lambda e: (e["at"], EVENT_TYPES.index(e["type"])))
     truncated = len(out) > limit
     return {"from": start, "to": end, "count": min(len(out), limit), "truncated": truncated, "events": out[:limit]}

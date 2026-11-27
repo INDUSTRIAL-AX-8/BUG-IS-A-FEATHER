@@ -95,7 +95,7 @@ def _attach_conditions(db: Session, runs: dict[int, RunInfo]) -> None:
             d = defs.get(cv.condition_definition_id)
             run = runs[cv.process_run_id]
             run.conditions[cv.condition_definition_id] = cv.value
-            if d and is_out_of_range(cv.value, d.min_value, d.max_value):
+            if d and is_out_of_range(cv.value, *d.effective_range()[:2]):
                 run.out_of_range[d.id] = cv.value
 
 
@@ -209,10 +209,11 @@ def seed_lots_for_node(
         if d is None:
             raise not_found("작업 조건 항목")
         conds = []
-        if d.min_value is not None:
-            conds.append(ConditionValue.value < d.min_value)
-        if d.max_value is not None:
-            conds.append(ConditionValue.value > d.max_value)
+        lo, hi, _ = d.effective_range()
+        if lo is not None:
+            conds.append(ConditionValue.value < lo)
+        if hi is not None:
+            conds.append(ConditionValue.value > hi)
         if not conds:
             return ntype, nid, set()
         stmt = (

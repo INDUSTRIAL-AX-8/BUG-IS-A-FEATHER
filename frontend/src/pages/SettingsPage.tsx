@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { Empty, Field, Loading, PageHead, Panel } from '../components/ui'
 import { fmtDateTime, ROLE_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { PRESETS, useTerms } from '../lib/terms'
 
 type Settings = Record<string, Record<string, unknown>>
 
@@ -39,6 +40,7 @@ export function SettingsPage() {
       </div>
       {!can('ADMIN') && tab !== 'users' && <div className="notice" style={{ marginBottom: 12 }}>조회만 가능합니다. 변경은 관리자 권한이 필요합니다.</div>}
       <Loading error={s.error} loading={s.loading && !s.data} />
+      {s.data && tab === 'settings' && <TermPanel editable={can('ADMIN')} onSaved={s.reload} />}
       {s.data && tab === 'settings' && (
         <div className="grid cols-3" style={{ alignItems: 'start' }}>
           {Object.keys(LABELS).map((k) => s.data![k] && <SettingForm key={k} name={k} value={s.data![k]} editable={can('ADMIN')} onSaved={s.reload} />)}
@@ -48,6 +50,30 @@ export function SettingsPage() {
       {tab === 'users' && can('ADMIN') && <Users />}
       {tab === 'audit' && can('ADMIN') && <Audit />}
     </>
+  )
+}
+
+function TermPanel({ editable, onSaved }: { editable: boolean; onSaved: () => void }) {
+  const { preset, reload } = useTerms()
+  const [msg, setMsg] = useState<string | null>(null)
+  const change = async (p: string) => {
+    try {
+      await api.put('/settings/terminology', { preset: p, overrides: {} })
+      reload(); onSaved(); setMsg('화면 용어를 바꿨습니다.')
+    } catch (e) { setMsg(errorText(e)) }
+  }
+  return (
+    <Panel title="화면 용어 (현장 도메인)" style={{ marginBottom: 12 }}>
+      <div className="row wrap">
+        {Object.entries(PRESETS).map(([k, v]) => (
+          <button key={k} className={preset === k ? 'primary' : ''} disabled={!editable} onClick={() => change(k)}>{v.label}</button>
+        ))}
+        <span className="muted" style={{ fontSize: 12 }}>
+          예: 사출 성형 → 시간대 기록은 '생산 실적', 설비는 '사출기', 작업 조건은 '성형 조건'. 데이터 구조는 같고 화면에 보이는 말만 바뀝니다.
+        </span>
+      </div>
+      {msg && <div className="notice" style={{ marginTop: 8 }}>{msg}</div>}
+    </Panel>
   )
 }
 

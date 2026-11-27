@@ -356,6 +356,7 @@ def import_kamp(
     scoring = get_setting(db, "cause_scoring")
     if scoring["downstream_window_days"] != KAMP_DOWNSTREAM_DAYS:
         put_setting(db, "cause_scoring", {"downstream_window_days": KAMP_DOWNSTREAM_DAYS}, judge)
+    put_setting(db, "terminology", {"preset": "diecasting", "overrides": {}}, judge)
 
     summary = KampSummary(
         runs=len(runs), shots=len(j), inspected_shots=int(j["has_quality"].sum()),

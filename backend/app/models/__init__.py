@@ -27,6 +27,7 @@ from app.models.system import MappingTemplate, Setting, User
 from app.models.transaction import (
     ConditionValue,
     ControlLimit,
+    EquipmentEvent,
     ForecastResult,
     GenealogyEdge,
     Lot,
@@ -47,6 +48,7 @@ __all__ = [
     "DefectJudgment",
     "DefectType",
     "Equipment",
+    "EquipmentEvent",
     "ForecastResult",
     "ForecastStatus",
     "GenealogyEdge",

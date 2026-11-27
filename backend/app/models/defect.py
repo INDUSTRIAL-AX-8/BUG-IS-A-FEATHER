@@ -23,6 +23,8 @@ class DefectJudgment(Base):
     judged_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     judged_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     memo: Mapped[str | None] = mapped_column(Text)
+    # 집계 기록(예: 1시간 300개 중 33개)처럼 LOT 안 일부만 불량일 때의 불량 수량. null 이면 LOT 전체 불량
+    defect_qty: Mapped[float | None] = mapped_column(Float)
     attachments: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     cancelled_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
