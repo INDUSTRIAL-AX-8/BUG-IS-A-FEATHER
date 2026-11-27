@@ -8,6 +8,8 @@ export interface User {
   role: Role
   is_active: boolean
   created_at: string
+  /** 공개된 초기 비밀번호로 로그인함 — 비밀번호를 바꾸기 전에는 다른 화면을 쓸 수 없다 */
+  must_change_password?: boolean
 }
 
 export interface ItemType {

@@ -42,8 +42,10 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
-def issue_token(user_id: int, secret: str, ttl_minutes: int) -> str:
-    payload = {"sub": user_id, "exp": int(time.time()) + ttl_minutes * 60}
+def issue_token(user_id: int, secret: str, ttl_minutes: int, must_change_password: bool = False) -> str:
+    payload: dict = {"sub": user_id, "exp": int(time.time()) + ttl_minutes * 60}
+    if must_change_password:
+        payload["chg"] = True  # 공개된 초기 비밀번호로 로그인함 → 비밀번호 변경 외에는 쓸 수 없는 토큰
     body = _b64(json.dumps(payload, separators=(",", ":")).encode())
     sig = _b64(hmac.new(secret.encode(), body.encode(), hashlib.sha256).digest())
     return f"{body}.{sig}"
@@ -51,6 +53,12 @@ def issue_token(user_id: int, secret: str, ttl_minutes: int) -> str:
 
 def read_token(token: str, secret: str) -> int | None:
     """유효하면 user_id, 아니면 None."""
+    claims = read_token_claims(token, secret)
+    return claims["sub"] if claims else None
+
+
+def read_token_claims(token: str, secret: str) -> dict | None:
+    """유효하면 토큰 내용({"sub": user_id, "exp": ..., "chg": ...}), 아니면 None."""
     try:
         body, sig = token.split(".")
     except ValueError:
@@ -64,5 +72,4 @@ def read_token(token: str, secret: str) -> int | None:
         return None
     if payload.get("exp", 0) < time.time():
         return None
-    sub = payload.get("sub")
-    return sub if isinstance(sub, int) else None
+    return payload if isinstance(payload.get("sub"), int) else None

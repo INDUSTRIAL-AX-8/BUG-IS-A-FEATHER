@@ -6,6 +6,7 @@
 
 - 명세: [SPEC_불량원인추적.md](SPEC_불량원인추적.md)
 - 설계: [docs/DESIGN.md](docs/DESIGN.md)
+- 검토 핸드아웃(데이터의 적절성·모델의 정합성): [docs/HANDOUT.md](docs/HANDOUT.md)
 
 ## 가장 쉬운 실행 (Windows)
 
@@ -20,6 +21,10 @@
 | admin | admin1234 | 관리자 (`config\config.toml` 의 초기값 — 운영 전 변경) |
 | operator | operator1234 | 실무자 (데모 데이터와 함께 생성) |
 | viewer | viewer1234 | 조회자 (데모 데이터와 함께 생성) |
+
+위 비밀번호는 저장소에 공개된 초기값이라 **처음 로그인하면 새 비밀번호를 정하는 화면이 먼저 나옵니다** (바꾸기 전에는 다른 기능을 쓸 수 없음).
+시연·연습처럼 초기값을 그대로 써도 되는 PC 에서는 `config\config.toml` 의 `[auth] allow_default_passwords = true`
+(또는 환경변수 `BIF_AUTH_ALLOW_DEFAULT_PASSWORDS=true`)로 끌 수 있습니다. 비밀번호는 오른쪽 위 **비밀번호 변경**에서 언제든 바꿉니다.
 
 ## 폐쇄망 설치
 
@@ -114,7 +119,8 @@ npm run build      # frontend/dist 생성 → FastAPI 가 / 에서 서빙
 | 실무자 | + 불량 판정, 원인 확정, 보류/격리, SPC 위반 확인, 업로드·수집, 예측 실행 |
 | 관리자 | + 마스터, 넬슨룰, 관리한계 고정, 가중치·설정, 사용자 관리, 판정 취소, 격리 해제, 감사 로그 |
 
-비밀번호는 scrypt 해시로 저장. 인증은 `app/auth/provider.py` 의 `AuthProvider` 를 구현해 외부 인증(LDAP/SSO 등)으로 교체할 수 있습니다.
+비밀번호는 scrypt 해시로 저장. 접속 토큰 서명 키(`secret_key`)를 정하지 않았거나 예시 값 그대로면 서버가 임의 키를 만들어
+`data/secret.key` 에 두고 씁니다(공개된 기본 키로는 토큰을 만들 수 없음). 인증은 `app/auth/provider.py` 의 `AuthProvider` 를 구현해 외부 인증(LDAP/SSO 등)으로 교체할 수 있습니다.
 판정, 원인 확정, 룰·설정 변경, 관리한계 재설정, 상태 일괄 변경, 적재는 모두 감사 로그(설정 > 감사 로그)에 남습니다.
 
 ## 정확도 지표
@@ -242,7 +248,7 @@ docker build -f docker/Dockerfile -t bug-is-a-feather .
 docker run -d --name bif -p 8300:8000 -v bif-data:/app/data -e BIF_DEMO=injection --add-host=host.docker.internal:host-gateway --restart unless-stopped bug-is-a-feather
 ```
 
-http://localhost:8300 — 처음 시작할 때 사출기 3호 데이터와 전체 공정 흐름을 넣고 요인 분석까지 돌립니다 (`BIF_DEMO=sample` 은 합성 시나리오, 비우면 빈 DB).
+http://localhost:8300 — 초기 비밀번호를 바꾸지 않고 시연하려면 `-e BIF_AUTH_ALLOW_DEFAULT_PASSWORDS=true` 를 더합니다. 처음 시작할 때 사출기 3호 데이터와 전체 공정 흐름을 넣고 요인 분석까지 돌립니다 (`BIF_DEMO=sample` 은 합성 시나리오, 비우면 빈 DB).
 DB 는 `bif-data` 볼륨에 남고, 컨테이너가 시작할 때마다 마이그레이션을 자동 적용합니다. 로컬 LLM 은 호스트의 Ollama(`host.docker.internal:11434`)를 씁니다.
 이미지는 Python 3.13 기준입니다 (`requirements.lock` 은 Python 3.12 이상 필요).
 

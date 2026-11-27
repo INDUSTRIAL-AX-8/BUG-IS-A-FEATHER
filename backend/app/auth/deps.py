@@ -7,13 +7,15 @@ from collections.abc import Callable
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from app.auth.security import read_token
-from app.config import get_settings
+from app.auth.security import read_token_claims
+from app.config import get_secret_key
 from app.db import get_db
 from app.errors import AppError
 from app.models import Role, User
 
 TOKEN_COOKIE = "bif_token"
+# 비밀번호 변경이 필요한 토큰으로도 쓸 수 있는 경로 (그 밖의 API 는 403)
+_PASSWORD_CHANGE_PATHS = ("/auth/me", "/auth/password", "/auth/logout")
 
 
 def _extract_token(request: Request) -> str | None:
@@ -27,12 +29,16 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = _extract_token(request)
     if not token:
         raise AppError(401, "로그인이 필요합니다.")
-    user_id = read_token(token, get_settings().auth_secret_key)
-    if user_id is None:
+    claims = read_token_claims(token, get_secret_key())
+    if claims is None:
         raise AppError(401, "로그인 정보가 만료되었거나 올바르지 않습니다. 다시 로그인하세요.")
-    user = db.get(User, user_id)
+    user = db.get(User, claims["sub"])
     if user is None or not user.is_active:
         raise AppError(401, "사용할 수 없는 계정입니다.")
+    must_change = bool(claims.get("chg"))
+    request.state.must_change_password = must_change
+    if must_change and not request.url.path.endswith(_PASSWORD_CHANGE_PATHS):
+        raise AppError(403, "초기 비밀번호를 사용 중입니다. 비밀번호를 바꾼 뒤 이용하세요.")
     return user
 
 

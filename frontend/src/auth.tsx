@@ -6,9 +6,12 @@ interface AuthState {
   user: User | null
   ready: boolean
   login: (username: string, password: string) => Promise<void>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   logout: () => void
   can: (role: Role) => boolean
 }
+
+interface SignedIn { token: string; user: User; must_change_password: boolean }
 
 const LEVEL: Record<Role, number> = { VIEWER: 0, OPERATOR: 1, ADMIN: 2 }
 const AuthContext = createContext<AuthState | null>(null)
@@ -30,9 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(async (username: string, password: string) => {
-    const r = await api.post<{ token: string; user: User }>('/auth/login', { username, password })
+    const r = await api.post<SignedIn>('/auth/login', { username, password })
     setToken(r.token)
-    setUser(r.user)
+    setUser({ ...r.user, must_change_password: r.must_change_password })
+  }, [])
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const r = await api.post<SignedIn>('/auth/password', { current_password: currentPassword, new_password: newPassword })
+    setToken(r.token)
+    setUser({ ...r.user, must_change_password: r.must_change_password })
   }, [])
 
   const logout = useCallback(() => {
@@ -43,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const can = useCallback((role: Role) => !!user && LEVEL[user.role] >= LEVEL[role], [user])
 
-  return <AuthContext.Provider value={{ user, ready, login, logout, can }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, ready, login, changePassword, logout, can }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth(): AuthState {

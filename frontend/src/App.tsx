@@ -5,6 +5,7 @@ import { ControlChartPage } from './pages/ControlChartPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DefectPage } from './pages/DefectPage'
 import { GenealogyPage } from './pages/GenealogyPage'
+import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { LoginPage } from './pages/LoginPage'
 import { AccuracyPage } from './pages/AccuracyPage'
 import { MasterPage } from './pages/MasterPage'
@@ -25,6 +26,7 @@ export function App() {
   const { user, ready } = useAuth()
   if (!ready) return <div className="empty">불러오는 중…</div>
   if (!user) return <LoginPage />
+  if (user.must_change_password) return <ChangePasswordPage forced />
   return (
     <TermsProvider>
     <LiveProvider>
@@ -45,6 +47,7 @@ export function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/accuracy" element={<AccuracyPage />} />
         <Route path="/simulation" element={<SimulationPage />} />
+        <Route path="/password" element={<ChangePasswordPage />} />
         <Route path="*" element={<Placeholder title="없는 화면" />} />
       </Routes>
     </Layout>

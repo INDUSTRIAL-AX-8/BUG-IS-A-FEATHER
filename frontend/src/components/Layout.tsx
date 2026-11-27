@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { ROLE_LABEL } from '../lib/format'
 import { useTerms, type TermKey } from '../lib/terms'
@@ -48,6 +48,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <span className="user">
           {user?.display_name ?? user?.username} · {user ? ROLE_LABEL[user.role] : ''}
         </span>
+        <Link to="/password"><button className="ghost">비밀번호 변경</button></Link>
         <button className="ghost" onClick={logout}>로그아웃</button>
       </header>
       <nav className="nav">

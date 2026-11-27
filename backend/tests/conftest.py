@@ -7,6 +7,7 @@ import time
 os.environ.setdefault("BIF_DATABASE_URL", "sqlite://")
 os.environ.setdefault("BIF_SCHEDULER_ENABLED", "false")
 os.environ.setdefault("BIF_AUTH_SECRET_KEY", "test-secret")
+os.environ.setdefault("BIF_AUTH_ALLOW_DEFAULT_PASSWORDS", "true")  # 초기 비밀번호 변경 강제는 test_auth_hardening 에서 검증
 os.environ.setdefault("BIF_LLM_OLLAMA_URL", "http://127.0.0.1:9")  # 연결 불가 주소
 
 import pytest

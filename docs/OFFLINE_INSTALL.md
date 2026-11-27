@@ -86,6 +86,7 @@ cd backend; .venv\Scripts\python -m pytest
 
 - [ ] `check_no_external.py` 통과
 - [ ] 브라우저 개발자도구 네트워크 탭에서 서버 주소 외 요청이 없음 (폰트·스크립트 포함)
-- [ ] `config.toml` 의 `secret_key` 와 초기 관리자 비밀번호 변경
+- [ ] 초기 계정으로 처음 로그인해 비밀번호 변경 (변경 화면이 자동으로 나옴), `allow_default_passwords` 가 `false` 인지 확인
+- [ ] `data/secret.key` (자동 생성된 서명 키) 는 백업·복사 대상에서 빼거나 DB 와 같은 수준으로 보호
 - [ ] `ollama_url` 이 로컬/사내망
 - [ ] 서버 방화벽에서 아웃바운드 차단 상태로 데모 시나리오 재현

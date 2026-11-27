@@ -12,6 +12,10 @@ from app.auth.security import hash_password, verify_password
 from app.models import Role, User
 
 
+# 저장소(README, 설정 예시, 샘플 생성기)에 공개된 초기 비밀번호. 이 값으로 로그인하면 비밀번호 변경을 강제한다.
+PUBLIC_DEFAULT_PASSWORDS = frozenset({"admin1234", "operator1234", "viewer1234"})
+
+
 class AuthProvider(Protocol):
     def authenticate(self, db: Session, username: str, password: str) -> User | None: ...
 

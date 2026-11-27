@@ -14,10 +14,14 @@ port = 8000
 # frontend_dist = "C:/bif/frontend/dist"
 
 [auth]
+# 접속 토큰 서명 키. 이 예시 값 그대로 두면 서버가 임의 키를 만들어 data/secret.key 에 저장해 씁니다.
+# 여러 서버가 같은 키를 써야 하면 긴 임의 문자열을 직접 넣으세요.
 secret_key = "반드시-긴-임의-문자열로-바꾸세요"
 token_ttl_minutes = 720
 initial_admin_username = "admin"
-initial_admin_password = "admin1234"   # 최초 로그인 후 변경
+initial_admin_password = "admin1234"   # 공개된 초기값: 처음 로그인하면 변경 화면이 먼저 나옵니다
+# 공개된 초기 비밀번호(admin1234, operator1234, viewer1234)를 바꾸지 않고 쓰게 둘지. 시연용 PC 에서만 true
+allow_default_passwords = false
 
 [llm]
 # 로컬 Ollama 만 사용합니다. 외부 주소를 넣지 마세요.

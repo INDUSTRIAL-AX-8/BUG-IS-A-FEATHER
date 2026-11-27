@@ -5,15 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Response
+from fastapi import APIRouter, Body, Depends, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.deps import TOKEN_COOKIE, admin, get_current_user, viewer
-from app.auth.provider import create_user, get_provider
-from app.auth.security import hash_password, issue_token
-from app.config import get_settings
+from app.auth.provider import PUBLIC_DEFAULT_PASSWORDS, create_user, get_provider
+from app.auth.security import hash_password, issue_token, verify_password
+from app.config import get_secret_key, get_settings
 from app.db import get_db
 from app.errors import AppError, not_found
 from app.models import Role, User
@@ -41,6 +41,16 @@ class UserOut(ORM):
 class LoginOut(BaseModel):
     token: str
     user: UserOut
+    must_change_password: bool = False
+
+
+class MeOut(UserOut):
+    must_change_password: bool = False
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 class UserIn(BaseModel):
@@ -63,11 +73,34 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)):
     if user is None:
         raise AppError(401, "아이디 또는 비밀번호가 올바르지 않습니다.")
     s = get_settings()
-    token = issue_token(user.id, s.auth_secret_key, s.auth_token_ttl_minutes)
+    # 공개된 초기 비밀번호로 들어오면 비밀번호 변경만 할 수 있는 토큰을 준다
+    must_change = body.password in PUBLIC_DEFAULT_PASSWORDS and not s.auth_allow_default_passwords
+    return _signed_in(response, user, must_change)
+
+
+def _signed_in(response: Response, user: User, must_change: bool) -> LoginOut:
+    s = get_settings()
+    token = issue_token(user.id, get_secret_key(), s.auth_token_ttl_minutes, must_change_password=must_change)
     response.set_cookie(
         TOKEN_COOKIE, token, httponly=True, samesite="lax", max_age=s.auth_token_ttl_minutes * 60
     )
-    return LoginOut(token=token, user=UserOut.model_validate(user))
+    return LoginOut(token=token, user=UserOut.model_validate(user), must_change_password=must_change)
+
+
+@router.post("/auth/password", response_model=LoginOut)
+def change_own_password(body: PasswordChangeIn, response: Response, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """본인 비밀번호 변경. 성공하면 새 접속 토큰을 돌려준다."""
+    if not verify_password(body.current_password, user.password_hash):
+        raise AppError(401, "현재 비밀번호가 올바르지 않습니다.")
+    if body.new_password in PUBLIC_DEFAULT_PASSWORDS:
+        raise AppError(422, "공개된 초기 비밀번호는 쓸 수 없습니다. 다른 비밀번호를 정하세요.")
+    if body.new_password == body.current_password:
+        raise AppError(422, "현재 비밀번호와 다른 비밀번호를 정하세요.")
+    user.password_hash = hash_password(body.new_password)
+    audit.record(db, user, "update", "user", user.id, after={"password_changed": True, "by": "self"})
+    db.commit()
+    return _signed_in(response, user, must_change=False)
 
 
 @router.post("/auth/logout", status_code=204)
@@ -75,9 +108,11 @@ def logout(response: Response):
     response.delete_cookie(TOKEN_COOKIE)
 
 
-@router.get("/auth/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)):
-    return user
+@router.get("/auth/me", response_model=MeOut)
+def me(request: Request, user: User = Depends(get_current_user)):
+    out = MeOut.model_validate(user)
+    out.must_change_password = bool(getattr(request.state, "must_change_password", False))
+    return out
 
 
 @router.get("/users", response_model=list[UserOut])
