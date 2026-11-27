@@ -52,8 +52,12 @@ def main(argv: list[str] | None = None) -> None:
         from app.db import SessionLocal
         from app.sample.generator import generate
 
+        from app.services.forecast_service import run_all
+
         with SessionLocal() as db:
             scenario = generate(db, seed=args.seed, reset=args.reset)
+            print("ARIMA 예측 실행 중…")
+            run_all(db)
         print("샘플 데이터 생성 완료.")
         for key, value in scenario.summary().items():
             print(f"  {key}: {value}")

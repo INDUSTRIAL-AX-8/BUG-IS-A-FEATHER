@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 # 앱 import 전에 실제 DB 파일을 건드리지 않도록 설정
 os.environ.setdefault("BIF_DATABASE_URL", "sqlite://")
@@ -50,8 +51,16 @@ def _client_for(factory) -> TestClient:
     app.dependency_overrides[get_db] = _get_db
     app.state.session_factory = factory
     client = TestClient(app)
-    # 요청마다 이벤트 루프를 새로 만들지 않도록 포털을 열어 둔다 (Windows 소켓 생성 최소화)
-    client.__enter__()
+    # 요청마다 이벤트 루프를 새로 만들지 않도록 포털을 열어 둔다 (Windows 소켓 생성 최소화).
+    # 일부 샌드박스 환경에서 이벤트 루프용 socketpair 생성이 간헐적으로 실패(WinError 10014)하므로 재시도.
+    for attempt in range(5):
+        try:
+            client.__enter__()
+            break
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(0.2)
     _OPEN_CLIENTS.append(client)
     return client
 

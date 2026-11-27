@@ -59,7 +59,11 @@ FORECAST: dict[str, Any] = {
     "max_q": 3,
     "adf_alpha": 0.05,
     "schedule_cron_hour": 2,
-    "interval_alpha": 0.05,
+    "interval_alpha": 0.05,  # 예측 구간 95%
+    "max_points": 300,  # 적합에 쓰는 최근 포인트 수 (속도)
+    "breach_probability": 0.5,  # 이 확률 이상이면 '예상 이탈 시점'
+    "trend_window": 10,  # 추세 방향 판단에 쓰는 최근 포인트 수
+    "flat_threshold_sigma": 0.5,  # 창 전체 변화가 σ의 이 배수 미만이면 '평탄'
 }
 
 TRACE: dict[str, Any] = {
