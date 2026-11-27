@@ -11,6 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: { '/api': 'http://127.0.0.1:8000' },
+    // 백엔드가 다른 포트면 BIF_API_URL=http://127.0.0.1:8010 npm run dev
+    proxy: { '/api': process.env.BIF_API_URL ?? 'http://127.0.0.1:8000' },
   },
 })
