@@ -22,6 +22,7 @@ def _routers() -> list[APIRouter]:
     for module_name in (
         "app.api.spc",
         "app.api.causes",
+        "app.api.defects",
         "app.api.forecast",
         "app.api.assistant",
         "app.api.ingest",

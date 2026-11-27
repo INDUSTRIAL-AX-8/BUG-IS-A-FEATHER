@@ -44,6 +44,11 @@ CAUSE_SCORING: dict[str, Any] = {
     "beta_prior_beta": 20.0,
     "top_n_badges": 5,
     "max_trace_depth": 10,
+    "lift_saturation": 4.0,  # 평활 Lift 가 이 값이면 (b) 점수 1.0
+    "spc_rule_saturation": 3,  # 위반 룰 종류가 이 개수면 (a) 점수 1.0
+    "history_saturation": 3.0,  # 가중 확정 횟수가 이 값이면 (f) 점수 1.0
+    "history_type_weight": 0.3,  # 같은 ItemType(다른 LOT) 확정 1건의 가중치
+    "design_ratio_tolerance": 0.05,  # 설계에 허용 오차가 없을 때 기본값
 }
 
 FORECAST: dict[str, Any] = {

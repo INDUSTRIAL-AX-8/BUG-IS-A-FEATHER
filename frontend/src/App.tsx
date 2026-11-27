@@ -3,6 +3,8 @@ import { useAuth } from './auth'
 import { Layout } from './components/Layout'
 import { ControlChartPage } from './pages/ControlChartPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DefectPage } from './pages/DefectPage'
+import { GenealogyPage } from './pages/GenealogyPage'
 import { LoginPage } from './pages/LoginPage'
 import { Placeholder } from './pages/Placeholder'
 
@@ -15,8 +17,8 @@ export function App() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/spc" element={<ControlChartPage />} />
-        <Route path="/genealogy" element={<Placeholder title="계보 그래프" />} />
-        <Route path="/defects" element={<Placeholder title="불량 판정" />} />
+        <Route path="/genealogy" element={<GenealogyPage />} />
+        <Route path="/defects" element={<DefectPage />} />
         <Route path="/master" element={<Placeholder title="마스터 관리" />} />
         <Route path="/upload" element={<Placeholder title="데이터 업로드" />} />
         <Route path="/settings" element={<Placeholder title="설정" />} />
