@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.crud import make_crud_router, require_exists
 from app.auth.deps import admin, viewer
 from app.db import get_db
-from app.errors import not_found
+from app.core.spc.nelson import validate_config
+from app.errors import AppError, not_found
 from app.models import (
     Characteristic,
     ConditionDefinition,
@@ -48,6 +49,10 @@ def _step_ref(db, data, _obj):
 def _char_ref(db, data, _obj):
     require_exists(db, ProcessStep, data.get("process_step_id"), "공정 단계")
     require_exists(db, ItemType, data.get("item_type_id"), "부품 종류")
+    if data.get("rule_config"):
+        errors = validate_config(data["rule_config"])
+        if errors:
+            raise AppError(422, "넬슨룰 설정이 올바르지 않습니다.", errors)
 
 
 routers = [

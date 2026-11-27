@@ -21,6 +21,24 @@ copy ..\config\config.example.toml ..\config\config.toml   # 필요 시 수정
 
 샘플 계정: `admin / admin1234`(관리자, 설정 파일 값), `operator / operator1234`(실무자), `viewer / viewer1234`(조회자)
 
+## 프론트엔드 빌드 (인터넷 되는 PC)
+
+```powershell
+cd frontend
+npm ci
+npm run build      # frontend/dist 생성 → FastAPI 가 / 에서 서빙
+```
+
+개발 중에는 `npm run dev` (http://localhost:5173, /api 는 8000 으로 프록시).
+
+## SPC 동작 요약
+
+- 관리도 종류: 서브그룹 크기 1 → I-MR, 2~9 → Xbar-R, 10 이상 → Xbar-S (특성별 수동 지정 가능)
+- 관리한계: 관리자가 **기준 구간**을 지정해 계산·고정(버전 관리, AuditLog). 고정 전에는 처음 20개 서브그룹으로 계산한 *임시 한계*를 쓴다.
+- 넬슨룰: 전역 기본값(`설정 > nelson_rules`) + 특성별 덮어쓰기. 룰 8 은 넬슨 원 정의대로 "±1σ 밖 연속 n점이 중심선 양쪽에 걸침" 으로 판정한다.
+- 같은 룰이 이어서 성립하면 하나의 위반으로 묶고, 처음 성립한 시점을 발생 시각으로 저장한다. 확인(ack)한 위반은 재계산해도 유지된다.
+- 스케줄러가 주기적으로(기본 60분) 위반을 재계산한다.
+
 ## 테스트
 
 ```powershell
@@ -33,6 +51,7 @@ cd backend
 | Phase | 내용 | 상태 |
 |---|---|---|
 | 1 | 골격, DB 모델, 마이그레이션, 인증 계층, AuditLog, 마스터 CRUD, LOT/계보/측정 조회, 샘플 생성기 | 완료 |
+| 2 | 넬슨룰 8종(룰별 On/Off·파라미터), 관리도 3종 자동/수동, 기준 구간 고정, 위반 저장, 프론트 골격, 관리도 화면 | 완료 |
 
 ## 샘플 시나리오
 

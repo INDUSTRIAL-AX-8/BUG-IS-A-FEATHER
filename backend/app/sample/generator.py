@@ -126,7 +126,7 @@ def _ensure_users(db: Session) -> dict[str, User]:
     return users
 
 
-def generate(db: Session, seed: int = 42, reset: bool = False) -> Scenario:
+def generate(db: Session, seed: int = 42, reset: bool = False, run_analysis: bool = True) -> Scenario:
     if reset:
         wipe(db)
     elif db.scalar(select(Lot.id).limit(1)) is not None:
@@ -384,4 +384,8 @@ def generate(db: Session, seed: int = 42, reset: bool = False) -> Scenario:
         "측정값 수": len(measurements),
         "불량 판정 수": len(judgments),
     }
+    if run_analysis:
+        from app.services.spc_service import recompute_all
+
+        scenario.counts["SPC 위반 수"] = sum(recompute_all(db).values())
     return scenario

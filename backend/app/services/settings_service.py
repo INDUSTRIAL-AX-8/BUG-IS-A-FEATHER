@@ -43,6 +43,12 @@ def put_setting(db: Session, key: str, value: Any, user: User | None) -> Any:
         unknown = set(value) - set(default)
         if unknown and key != "nelson_rules":
             raise AppError(422, f"알 수 없는 설정 키입니다: {', '.join(sorted(unknown))}")
+    if key == "nelson_rules":
+        from app.core.spc.nelson import validate_config
+
+        errors = validate_config(value)
+        if errors:
+            raise AppError(422, "넬슨룰 설정이 올바르지 않습니다.", errors)
     row = db.get(Setting, key)
     if row is None:
         row = Setting(key=key, value=value, updated_at=datetime.now())

@@ -16,3 +16,6 @@ frontend/dist/
 
 # 오프라인 번들 산출물
 offline_bundle/
+
+# 로컬 도구 설정
+.claude/

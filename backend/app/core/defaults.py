@@ -24,6 +24,7 @@ CONTROL_CHART: dict[str, Any] = {
     "imr_max_n": 1,  # n <= 1 → I-MR
     "xbar_r_max_n": 9,  # 2 <= n <= 9 → Xbar-R, 그 이상 → Xbar-S
     "min_baseline_subgroups": 20,
+    "recompute_interval_minutes": 60,  # SPC 위반 재계산 주기 (스케줄러)
 }
 
 # 원인 후보 점수 가중치 (a)~(f)
