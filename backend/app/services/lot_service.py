@@ -15,6 +15,7 @@ from app.models import (
     GenealogyEdge,
     ItemType,
     Lot,
+    LotNote,
     ProcessRun,
     ProcessStep,
 )
@@ -38,9 +39,30 @@ def item_type_names(db: Session) -> dict[int, str]:
     return dict(db.execute(select(ItemType.id, ItemType.name)).all())
 
 
+def note_summary(db: Session, lot_ids: list[int]) -> dict[int, tuple[int, str | None]]:
+    """LOT → (메모 수, 최근 메모 앞부분)."""
+    out: dict[int, tuple[int, str | None]] = {}
+    for i in range(0, len(lot_ids), 500):
+        chunk = lot_ids[i:i + 500]
+        counts = dict(db.execute(select(LotNote.lot_id, func.count()).where(LotNote.lot_id.in_(chunk))
+                                 .group_by(LotNote.lot_id)).all())
+        for lid, text in db.execute(select(LotNote.lot_id, LotNote.text).where(LotNote.lot_id.in_(list(counts)))
+                                    .order_by(LotNote.created_at)):
+            out[lid] = (counts[lid], text[:80])
+    return out
+
+
 def lots_out(db: Session, lots: Iterable[Lot]) -> list[LotOut]:
     names = item_type_names(db)
-    return [lot_out(l, names) for l in lots]
+    lots = list(lots)
+    notes = note_summary(db, [l.id for l in lots])
+    out = []
+    for l in lots:
+        o = lot_out(l, names)
+        if l.id in notes:
+            o.note_count, o.last_note = notes[l.id]
+        out.append(o)
+    return out
 
 
 def lot_detail(db: Session, lot: Lot) -> LotDetail:
@@ -55,6 +77,9 @@ def lot_detail(db: Session, lot: Lot) -> LotDetail:
         or 0
     )
     base = lot_out(lot).model_dump()
+    n = note_summary(db, [lot.id]).get(lot.id)
+    if n:
+        base["note_count"], base["last_note"] = n
     return LotDetail(**base, parent_count=parents, child_count=children, judgment_count=judgments)
 
 

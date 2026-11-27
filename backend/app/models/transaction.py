@@ -192,3 +192,15 @@ class EquipmentEvent(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime)
     note: Mapped[str | None] = mapped_column(String(500))
+
+
+class LotNote(Base):
+    """LOT(제품·생산 실적)별 메모. 현장 관찰, 조치, 인수인계 기록."""
+
+    __tablename__ = "lot_note"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lot_id: Mapped[int] = mapped_column(ForeignKey("lot.id"), index=True)
+    text: Mapped[str] = mapped_column(String(2000))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)

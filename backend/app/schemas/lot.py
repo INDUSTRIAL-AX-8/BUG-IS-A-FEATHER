@@ -24,6 +24,8 @@ class LotOut(ORM):
     created_at: datetime
     qty: float | None
     status: LotStatus
+    note_count: int = 0
+    last_note: str | None = None
 
 
 class LotDetail(LotOut):

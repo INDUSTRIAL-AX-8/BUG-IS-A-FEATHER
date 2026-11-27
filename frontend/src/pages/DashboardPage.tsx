@@ -8,6 +8,9 @@ import { AXIS_STYLE, CHART_FONT, EChart, type EChartsOption } from '../component
 import { Empty, Level, Loading, Metric, PageHead, Panel, RuleBadge, ScoreBar } from '../components/ui'
 import { fmtDateTime, fmtNum, fmtPct, NODE_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { LivePanel } from '../components/LivePanel'
+import { useLiveRefresh } from '../lib/live'
+import { Help } from '../components/Help'
 
 export interface WatchItem {
   characteristic_id: number
@@ -60,6 +63,7 @@ export function DashboardPage() {
   const summary = useAsync(() => api.get<{ total: number; confirmed: number }>('/defects/summary'), [])
   const accuracy = useAsync(() => api.get<Accuracy>('/accuracy').catch(() => null), [])
   const [selected, setSelected] = useState<number | null>(null)
+  useLiveRefresh(() => { violations.reload(); defects.reload(); summary.reload() }, 1500)
 
   const watchItems = watch.data?.items ?? []
   const risky = watchItems.filter((w) => (w.risk_score ?? 0) >= 0.5).length
@@ -76,6 +80,7 @@ export function DashboardPage() {
           hint={accuracy.data ? <Link to="/accuracy">확정 {accuracy.data.overall.total}건 기준 · 자세히</Link> : '확정 데이터 없음'} />
       </div>
 
+      <div style={{ marginBottom: 12 }}><LivePanel /></div>
       <div className="grid cols-2" style={{ marginBottom: 12 }}>
         <WatchlistPanel data={watch.data} error={watch.error} loading={watch.loading} selected={sel} onSelect={setSelected} onRan={watch.reload} />
         {sel ? <ForecastChart charId={sel} /> : <Panel title="예측 차트"><Empty>주의 부품을 선택하세요.</Empty></Panel>}
@@ -129,7 +134,7 @@ function WatchlistPanel(props: {
     }
   }
   return (
-    <Panel title="주의 부품 순위 (ARIMA)" flush
+    <Panel title={<>주의 부품 순위 (ARIMA)<Help topic="arima" /></>} flush
       actions={can('OPERATOR') && <button className="small" disabled={busy} onClick={run}>{busy ? '예측 중…' : '지금 예측 실행'}</button>}>
       <div className="notice" style={{ margin: 8 }}>{props.data?.disclaimer ?? '통계적 예측이며 확정 판단이 아닙니다.'} 관리한계·규격 중 안쪽 경계를 넘을 확률을 위험 점수로 씁니다.</div>
       {msg && <div className="notice error" style={{ margin: 8 }}>{msg}</div>}
@@ -223,7 +228,7 @@ function ForecastChart({ charId }: { charId: number }) {
 
 export function ViolationsPanel(props: { rows: ViolationRow[] | null; error: string | null; loading: boolean; height?: number }) {
   return (
-    <Panel title="미확인 SPC 위반" actions={<Link to="/spc">관리도 보기</Link>} flush>
+    <Panel title={<>미확인 SPC 위반<Help topic="nelson" /></>} actions={<Link to="/spc">관리도 보기</Link>} flush>
       <Loading error={props.error} loading={props.loading && !props.rows} />
       <div className="table-wrap" style={{ maxHeight: props.height ?? 360 }}>
         <table className="t">

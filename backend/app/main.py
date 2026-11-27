@@ -29,6 +29,7 @@ def _routers() -> list[APIRouter]:
         "app.api.events",
         "app.api.accuracy",
         "app.api.analysis",
+        "app.api.live",
     ):
         try:
             module = __import__(module_name, fromlist=["router"])
@@ -51,6 +52,12 @@ async def lifespan(app: FastAPI):
         if start_scheduler:
             scheduler = start_scheduler()
     yield
+    try:
+        from app.live.simulator import get_simulator
+
+        get_simulator().stop()
+    except Exception:
+        pass
     if scheduler is not None:
         scheduler.shutdown(wait=False)
 

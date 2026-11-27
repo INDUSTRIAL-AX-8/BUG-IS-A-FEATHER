@@ -7,6 +7,8 @@ import { AXIS_STYLE, CHART_FONT, EChart, type EChartsOption } from '../component
 import { Empty, Field, Loading, PageHead, Panel, RuleBadge } from '../components/ui'
 import { CHART_LABEL, fmtDateTime, fmtNum } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { useLiveRefresh } from '../lib/live'
+import { Help } from '../components/Help'
 
 const DISPERSION_LABEL: Record<string, string> = { IMR: 'MR', XBAR_R: 'R', XBAR_S: 'S' }
 
@@ -57,7 +59,15 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
   const nav = useNavigate()
   const { can } = useAuth()
   const chart = useAsync(() => api.get<ChartData>(`/spc/${charId}/chart`), [charId])
-  const d = chart.data
+  useLiveRefresh(chart.reload, 1000)
+  const [visible, setVisible] = useRuleView()
+  const raw = chart.data
+  // 실무자 보기 필터: 체크한 룰의 위반만 표시 (판정·저장은 그대로)
+  const d = useMemo(() => raw && {
+    ...raw,
+    points: raw.points.map((p) => ({ ...p, rules: p.rules.filter((x) => visible.has(x)) })),
+    violations: raw.violations.filter((v) => visible.has(v.rule_no)),
+  }, [raw, visible])
 
   const options = useMemo(() => (d ? buildOptions(d) : null), [d])
 
@@ -78,19 +88,20 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
       >
         <div className="row wrap" style={{ marginBottom: 8, gap: 16, fontSize: 13 }}>
           {d.baseline_scope === 'PARENT_LOT' && <span className="muted">마지막 체제 기준 →</span>}
-          <span>CL <b>{fmtNum(d.limits?.center)}</b></span>
+          <span>CL <b>{fmtNum(d.limits?.center)}</b></span><Help topic="controlLimit" />
           <span>UCL <b>{fmtNum(d.limits?.ucl)}</b></span>
           <span>LCL <b>{fmtNum(d.limits?.lcl)}</b></span>
           <span className="muted">USL {fmtNum(c.usl)} · LSL {fmtNum(c.lsl)} · Target {fmtNum(c.target)}</span>
           <span className="right">
             {d.baseline_scope === 'PARENT_LOT'
-              ? <span className="badge neutral">· 상위 LOT(체제)별 기준선</span>
+              ? <span className="badge neutral">· 상위 LOT(체제)별 기준선<Help topic="regime" /></span>
               : d.provisional
-              ? <span className="badge warn">■ 임시 한계</span>
+              ? <span className="badge warn">■ 임시 한계<Help topic="provisional" /></span>
               : <span className="badge ok">● 고정 한계 v{d.limits?.version} ({fmtDateTime(d.limits?.baseline_from)} ~ {fmtDateTime(d.limits?.baseline_to)})</span>}
           </span>
         </div>
         {d.message && <div className="notice warn" style={{ marginBottom: 8 }}>{d.message}</div>}
+        <RuleViewBar visible={visible} setVisible={setVisible} rules={d.rules} hidden={(raw?.violations.length ?? 0) - d.violations.length} />
         {options ? (
           <>
             <EChart option={options.main} height={330} onClick={(p) => openLot(p.dataIndex)} group={`spc-${charId}`} />
@@ -100,7 +111,7 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
       </Panel>
 
       <div className="grid cols-2">
-        <Panel title={`위반 (${d.violations.length})`} flush>
+        <Panel title={<>위반 ({d.violations.length}){d.violations.length !== raw?.violations.length && <span className="faint" style={{ fontWeight: 400 }}> / 전체 {raw?.violations.length}</span>}<Help topic="nelson" /></>} flush>
           <div className="table-wrap" style={{ maxHeight: 300 }}>
             <table className="t">
               <thead><tr><th style={{ width: 56 }}>룰</th><th>내용</th><th style={{ width: 150 }}>발생 시각</th><th className="num" style={{ width: 60 }}>점 수</th></tr></thead>
@@ -123,6 +134,55 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
           <RulePanel key={charId} charId={charId} rules={d.rules} editable={can('ADMIN')} onDone={() => { chart.reload(); onChanged() }} />
         </div>
       </div>
+    </div>
+  )
+}
+
+const RULE_KEY = 'bif_rule_view'
+
+/** 실무자가 끄고 켜는 '볼 넬슨룰' — 이 브라우저에 기억한다. */
+function useRuleView(): [Set<number>, (s: Set<number>) => void] {
+  const [v, setV] = useState<Set<number>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(RULE_KEY) ?? 'null')
+      if (Array.isArray(saved)) return new Set(saved.map(Number))
+    } catch { /* 저장소 사용 불가 */ }
+    return new Set([1, 2, 3, 4, 5, 6, 7, 8])
+  })
+  const set = (s: Set<number>) => {
+    setV(s)
+    try { localStorage.setItem(RULE_KEY, JSON.stringify([...s])) } catch { /* 무시 */ }
+  }
+  return [v, set]
+}
+
+function RuleViewBar(props: { visible: Set<number>; setVisible: (s: Set<number>) => void; rules: ChartData['rules']; hidden: number }) {
+  const { visible, setVisible } = props
+  const enabled = new Map(props.rules.map((r) => [r.rule_no, r]))
+  const preset = (n: number[]) => setVisible(new Set(n))
+  return (
+    <div className="row wrap" style={{ gap: 10, marginBottom: 8, padding: '6px 8px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 3 }}>
+      <span style={{ fontSize: 12.5, fontWeight: 600 }}>볼 넬슨룰<Help topic="nelson" /></span>
+      {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+        const rule = enabled.get(n)
+        const off = rule && !rule.enabled
+        return (
+          <label key={n} className="check" style={{ fontSize: 12.5, opacity: off ? 0.45 : 1 }} title={off ? '이 특성에서는 관리자가 이 룰을 꺼 두었습니다' : rule?.description}>
+            <input type="checkbox" checked={visible.has(n)} disabled={off} onChange={(e) => {
+              const s = new Set(visible)
+              if (e.target.checked) s.add(n)
+              else s.delete(n)
+              setVisible(s)
+            }} />R{n}<Help topic={`rule${n}`} />
+          </label>
+        )
+      })}
+      <span className="row" style={{ gap: 4 }}>
+        <button className="small" onClick={() => preset([1])}>R1만</button>
+        <button className="small" onClick={() => preset([1, 2, 3, 4])}>R1~R4</button>
+        <button className="small" onClick={() => preset([1, 2, 3, 4, 5, 6, 7, 8])}>전체</button>
+      </span>
+      {props.hidden > 0 && <span className="faint" style={{ fontSize: 12 }}>숨긴 위반 {props.hidden}건</span>}
     </div>
   )
 }

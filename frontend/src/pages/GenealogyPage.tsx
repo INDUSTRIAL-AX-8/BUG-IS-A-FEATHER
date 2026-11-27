@@ -10,6 +10,8 @@ import { Empty, Field, Loading, PageHead, Panel, ScoreBar, StatusBadge } from '.
 import { CATEGORY_LABEL, fmtDateTime, NODE_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import { useTerms } from '../lib/terms'
+import { Help } from '../components/Help'
+import { LotMemo } from '../components/LotMemo'
 
 const ALL_TYPES: NodeKind[] = ['LOT', 'STEP', 'EQUIPMENT', 'CONDITION']
 const TOP_N = 5
@@ -133,7 +135,7 @@ export function GenealogyPage() {
 function CandidateList(props: { cands: Candidate[]; selected: string | null; onSelect: (id: string) => void }) {
   const max = props.cands[0]?.score || 1
   return (
-    <Panel title="원인 후보 순위" flush>
+    <Panel title={<>원인 후보 순위<Help topic="causeScore" /></>} flush>
       <table className="t">
         <thead><tr><th style={{ width: 40 }}>순위</th><th style={{ width: 46 }}>종류</th><th>노드</th><th style={{ width: 110 }}>종합 점수</th></tr></thead>
         <tbody>
@@ -175,6 +177,7 @@ function NodeDetail(props: { node: GraphNode; cand: Candidate; analysis: CauseAn
           <div className="row">
             <button onClick={() => props.onDownstream(node)}>정방향 영향 범위 보기</button>
           </div>
+          {node.type === 'LOT' && <LotMemo lotNo={node.label} compact />}
         </div>
       </Panel>
       <Panel title="점수 상세">
@@ -228,6 +231,7 @@ function ConfirmPanel({ lotNo, cand }: { lotNo: string; cand: Candidate }) {
 
 function DownstreamView(props: { node: GraphNode; rootCreated: string | null; depth: number; onBack: () => void }) {
   const { can } = useAuth()
+  const { t } = useTerms()
   const isLot = props.node.type === 'LOT'
   const at = props.node.at ?? props.rootCreated
   const down = useAsync(
@@ -277,7 +281,7 @@ function DownstreamView(props: { node: GraphNode; rootCreated: string | null; de
           </>
         )}
       </Panel>
-      <Panel title={`잠재 불량 범위 (${checked.size} 선택)`} flush
+      <Panel title={<>{`${t('impact')} (${checked.size} 선택)`}<Help topic="quarantine" /></>} flush
         actions={can('OPERATOR') ? (
           <div className="row">
             <button className="small" disabled={!checked.size} onClick={() => apply('HOLD')}>보류</button>

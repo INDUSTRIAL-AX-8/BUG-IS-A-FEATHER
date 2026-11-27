@@ -33,12 +33,25 @@ router = APIRouter(tags=["이벤트(타임라인/3D)"])
 EVENT_TYPES = ("run_start", "run_end", "measurement", "violation", "judgment", "equipment_event")
 
 
+@router.get("/events/range")
+def events_range(equipment_id: int | None = None, db: Session = Depends(get_db), _=Depends(viewer)):
+    """재생 가능한 기간 (공정 처리 기록의 처음·마지막 시각)."""
+    from sqlalchemy import func
+
+    stmt = select(func.min(ProcessRun.started_at), func.max(ProcessRun.started_at))
+    if equipment_id is not None:
+        stmt = stmt.where(ProcessRun.equipment_id == equipment_id)
+    lo, hi = db.execute(stmt).one()
+    return {"from": lo, "to": hi}
+
+
 @router.get("/events")
 def events(
     start: datetime = Query(alias="from"),
     end: datetime = Query(alias="to"),
     types: str | None = Query(default=None, description="쉼표 구분: run_start,run_end,measurement,violation,judgment"),
     equipment_id: int | None = None,
+    values: bool = Query(default=False, description="공정 시작 이벤트에 조건값(이탈 여부 포함)과 생산·불량 수를 붙임 (3D/타임라인)"),
     limit: int = Query(default=5000, ge=1, le=50000),
     db: Session = Depends(get_db),
     _=Depends(viewer),
@@ -63,8 +76,11 @@ def events(
             ProcessRun.started_at <= end, (ProcessRun.ended_at.is_(None)) | (ProcessRun.ended_at >= start))
         if equipment_id is not None:
             stmt = stmt.where(ProcessRun.equipment_id == equipment_id)
-        for r, lot_no in db.execute(stmt.limit(limit)):
-            base = {"run_id": r.id, "lot_no": lot_no, "step": steps.get(r.process_step_id), "equipment": eq_info(r.equipment_id)}
+        run_rows = db.execute(stmt.limit(limit)).all()
+        extra = _run_values(db, [r for r, _ in run_rows]) if values else {}
+        for r, lot_no in run_rows:
+            base = {"run_id": r.id, "lot_no": lot_no, "lot_id": r.lot_id, "step": steps.get(r.process_step_id),
+                    "operator": r.operator_id, "equipment": eq_info(r.equipment_id), **extra.get(r.id, {})}
             if "run_start" in wanted and start <= r.started_at <= end:
                 out.append({"type": "run_start", "at": r.started_at, **base})
             if "run_end" in wanted and r.ended_at and start <= r.ended_at <= end:
@@ -98,3 +114,35 @@ def events(
     out.sort(key=lambda e: (e["at"], EVENT_TYPES.index(e["type"])))
     truncated = len(out) > limit
     return {"from": start, "to": end, "count": min(len(out), limit), "truncated": truncated, "events": out[:limit]}
+
+
+def _run_values(db: Session, runs: list) -> dict[int, dict]:
+    """run → {conditions: {이름: {value, unit, out_of_range}}, produced, defects} (일괄 조회)."""
+    from app.models import ConditionDefinition, ConditionValue
+
+    ids = [r.id for r in runs]
+    defs = {d.id: d for d in db.scalars(select(ConditionDefinition))}
+    out: dict[int, dict] = {r.id: {"conditions": {}} for r in runs}
+    for i in range(0, len(ids), 500):
+        for rid, did, v in db.execute(select(ConditionValue.process_run_id, ConditionValue.condition_definition_id,
+                                             ConditionValue.value).where(ConditionValue.process_run_id.in_(ids[i:i + 500]))):
+            d = defs.get(did)
+            if d is None:
+                continue
+            lo, hi, learned = d.effective_range()
+            out[rid]["conditions"][d.name] = {"value": v, "unit": d.unit, "min": lo, "max": hi, "learned": learned,
+                                              "out_of_range": (lo is not None and v < lo) or (hi is not None and v > hi)}
+    lot_ids = {r.lot_id for r in runs}
+    qty = {}
+    dq = {}
+    lid_list = list(lot_ids)
+    for i in range(0, len(lid_list), 500):
+        chunk = lid_list[i:i + 500]
+        qty.update(dict(db.execute(select(Lot.id, Lot.qty).where(Lot.id.in_(chunk))).all()))
+        for lid, q in db.execute(select(DefectJudgment.lot_id, DefectJudgment.defect_qty)
+                                 .where(DefectJudgment.lot_id.in_(chunk), DefectJudgment.is_cancelled.is_(False))):
+            dq[lid] = dq.get(lid, 0) + (q if q is not None else (qty.get(lid) or 1))
+    for r in runs:
+        out[r.id]["produced"] = qty.get(r.lot_id)
+        out[r.id]["defects"] = dq.get(r.lot_id, 0)
+    return out

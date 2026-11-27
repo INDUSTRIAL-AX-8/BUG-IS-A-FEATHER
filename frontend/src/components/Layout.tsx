@@ -4,6 +4,8 @@ import { useAuth } from '../auth'
 import { ROLE_LABEL } from '../lib/format'
 import { useTerms, type TermKey } from '../lib/terms'
 import { ChatPanel } from './ChatPanel'
+import { GlobalSearch } from './LotMemo'
+import { useLive } from '../lib/live'
 
 const NAV: { to: string; label: string; num: string; term?: TermKey }[] = [
   { to: '/', label: '대시보드', num: '1' },
@@ -19,12 +21,19 @@ const NAV: { to: string; label: string; num: string; term?: TermKey }[] = [
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const { t } = useTerms()
+  const live = useLive()
+  const st = live.status
   const [chatOpen, setChatOpen] = useState(false)
   return (
     <div className={`app ${chatOpen ? 'with-chat' : ''}`}>
       <header className="header">
         <span className="brand">불량 원인 추적</span>
+        <GlobalSearch />
         <span className="spacer" />
+        <NavLink to="/" className={`live-dot ${st?.running ? (st.phase === '이상' || st.phase === '정비' ? 'alarm' : 'on') : ''}`}
+          title={st?.running ? `${st.equipment} 실시간 수집 중 (${st.phase})` : '실시간 수집 꺼짐 — 대시보드에서 시작'} style={{ textDecoration: 'none' }}>
+          <i />{st?.running ? `실시간 ${st.phase}` : live.connected ? '실시간 대기' : '연결 끊김'}
+        </NavLink>
         <button className="ghost" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
           {chatOpen ? '어시스턴트 닫기' : '어시스턴트'}
         </button>
@@ -41,8 +50,9 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
         ))}
         <div className="sep" />
+        <NavLink to="/lots"><span className="num" />{t('lot')} 목록·메모</NavLink>
+        <NavLink to="/simulation"><span className="num" />3D 디지털 트윈</NavLink>
         <NavLink to="/accuracy"><span className="num" />정확도 지표</NavLink>
-        <NavLink to="/simulation"><span className="num" />3D 시뮬레이션</NavLink>
       </nav>
       <main className="main">{children}</main>
       <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />

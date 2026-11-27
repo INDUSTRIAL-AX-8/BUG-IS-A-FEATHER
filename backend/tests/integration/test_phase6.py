@@ -189,3 +189,34 @@ def test_user_management_roles(fresh_sample_ctx):
     assert c.post("/api/auth/login", json={"username": "kim", "password": "pass1234"}).status_code == 401
     with ctx.db() as db:
         assert db.scalar(select(Lot).limit(1)) is not None
+
+
+def test_lot_notes_search_and_filter(fresh_sample_ctx):
+    ctx = fresh_sample_ctx
+    c, h = ctx.client, ctx.h
+    lot = ctx.scenario.planted_defect_lot_nos[0]
+    assert c.post(f"/api/lots/{lot}/notes", headers=h["viewer"], json={"text": "x"}).status_code == 403
+    n = c.post(f"/api/lots/{lot}/notes", headers=h["operator"], json={"text": "포장 박스 찌그러짐, 재검 요청"}).json()
+    assert n["author"] == "operator"
+    notes = c.get(f"/api/lots/{lot}/notes", headers=h["viewer"]).json()
+    assert notes[0]["text"].startswith("포장")
+    only = c.get("/api/lots?has_note=true", headers=h["viewer"]).json()
+    assert [x["lot_no"] for x in only] == [lot] and only[0]["note_count"] == 1
+    # 상단 검색: LOT 번호 일부, 메모 내용 둘 다
+    by_no = c.get(f"/api/lots/search?q={lot[:9]}", headers=h["viewer"]).json()
+    assert any(x["lot_no"] == lot for x in by_no)
+    by_note = c.get("/api/lots/search?q=재검", headers=h["viewer"]).json()
+    assert by_note[0]["lot_no"] == lot and by_note[0]["matched_note"]
+    assert c.get(f"/api/lots/{lot}", headers=h["viewer"]).json()["last_note"].startswith("포장")
+    # 삭제: 본인 또는 관리자만
+    assert c.delete(f"/api/lots/notes/{n['id']}", headers=h["viewer"]).status_code == 403
+    assert c.delete(f"/api/lots/notes/{n['id']}", headers=h["admin"]).status_code == 204
+    assert c.get("/api/lots?has_note=true", headers=h["viewer"]).json() == []
+
+
+def test_events_with_values(fresh_sample_ctx):
+    r = fresh_sample_ctx.client.get("/api/events", headers=fresh_sample_ctx.h["viewer"], params={
+        "from": "2026-10-09T00:00", "to": "2026-10-10T00:00", "types": "run_start", "values": True}).json()
+    mix = [e for e in r["events"] if e["step"] == "혼합"]
+    assert mix and "혼합 온도" in mix[0]["conditions"] and "out_of_range" in mix[0]["conditions"]["혼합 온도"]
+    assert any(e["conditions"]["혼합 온도"]["out_of_range"] for e in mix)  # 설비 이상 기간

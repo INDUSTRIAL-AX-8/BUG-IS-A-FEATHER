@@ -9,6 +9,7 @@ import { Empty, Field, Loading, PageHead, Panel, ScoreBar, StatusBadge } from '.
 import { fmtDateTime, NODE_LABEL } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import { useTerms } from '../lib/terms'
+import { LotMemo } from '../components/LotMemo'
 
 export function DefectPage() {
   const { can } = useAuth()
@@ -91,6 +92,7 @@ export function DefectPage() {
                   </Field>
                   <Field label="메모"><input value={memo} onChange={(e) => setMemo(e.target.value)} /></Field>
                 </div>
+                <LotMemo lotNo={lot.lot_no} compact />
                 <div className="row">
                   <button className="primary" disabled={!typeId || busy || !can('OPERATOR')} onClick={save}>{busy ? '저장 중…' : `${t('defectJudgment')} 저장`}</button>
                   <button onClick={() => { setLot(null); setLotNo(''); lotRef.current?.focus() }}>취소</button>

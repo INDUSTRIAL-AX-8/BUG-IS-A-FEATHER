@@ -35,6 +35,7 @@ from app.models import (
     EquipmentEvent,
     ForecastResult,
     GenealogyEdge,
+    LotNote,
     ItemCategory,
     ItemType,
     Lot,
@@ -105,7 +106,7 @@ class Scenario:
 
 _WIPE_ORDER = [
     CandidateSnapshot, RootCauseConfirmation, DefectJudgment, SpcViolation, ControlLimit,
-    ForecastResult, EquipmentEvent, Measurement, ConditionValue, ProcessRun, GenealogyEdge, Lot,
+    ForecastResult, EquipmentEvent, LotNote, Measurement, ConditionValue, ProcessRun, GenealogyEdge, Lot,
     ProductDesignComponent, ProductDesignStep, ProductDesign, Characteristic, ConditionDefinition,
     Equipment, ProcessStep, DefectType, ItemType, MappingTemplate, Setting, AuditLog,
 ]

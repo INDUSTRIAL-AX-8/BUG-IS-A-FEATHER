@@ -7,6 +7,7 @@ import { Empty, Level, Loading, PageHead, Panel } from '../components/ui'
 import { fmtDateTime, fmtNum, fmtPct } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import { useTerms } from '../lib/terms'
+import { Help } from '../components/Help'
 
 interface Target { equipment_id: number; equipment: string; process_step: string | null; runs: number; events: number }
 interface Levels { [level: string]: { rows: number; rate: number | null; obs_exp?: number | null } }
@@ -83,7 +84,7 @@ function ResultView({ r }: { r: Result }) {
       <Panel title="결론">
         <div className="stack" style={{ gap: 10 }}>
           <div className="row wrap" style={{ gap: 10 }}>
-            <Level level={lv}>확신도 {conf}</Level>
+            <Level level={lv}>확신도 {conf}</Level><Help topic="confidence" />
             <b style={{ fontSize: 16 }}>{r.verdict.headline}</b>
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
@@ -107,7 +108,7 @@ function ResultView({ r }: { r: Result }) {
       </div>
       <Panel title="요인별 판정" flush>
         <table className="t">
-          <thead><tr><th style={{ width: 150 }}>요인</th><th style={{ width: 70 }}>값 종류</th><th style={{ width: 150 }}>판정</th><th style={{ width: 120 }}>단독 효과</th><th>같은 조건 비교 / 수준별 불량률</th></tr></thead>
+          <thead><tr><th style={{ width: 150 }}>요인</th><th style={{ width: 70 }}>값 종류</th><th style={{ width: 170 }}>판정<Help topic="confounder" /></th><th style={{ width: 120 }}>단독 효과</th><th>같은 조건 비교 / 수준별 불량률<Help topic="oe" /></th></tr></thead>
           <tbody>
             {r.factors.map((f) => {
               const [label, level] = STATUS[f.status ?? ''] ?? ['-', 'neutral']
@@ -130,7 +131,7 @@ function ResultView({ r }: { r: Result }) {
         </table>
       </Panel>
       <div className="grid cols-2">
-        <Panel title="학습된 관리 경계">
+        <Panel title={<>학습된 관리 경계<Help topic="learned" /></>}>
           {(r.thresholds ?? []).length ? (
             <table className="t">
               <thead><tr><th>요인</th><th>경계</th><th className="num">나쁜 구간 불량률</th><th className="num">그 밖</th></tr></thead>

@@ -1,6 +1,7 @@
 import { FACTOR_ORDER, type Candidate } from '../api/causes'
 import { fmtNum, fmtPct, NODE_LABEL } from '../lib/format'
 import { ScoreBar } from './ui'
+import { Help } from './Help'
 
 // 요소별 기여도를 같은 축 막대로 보여준다 — "왜 이게 1순위인지" 설명용
 export function ScoreDetail({ c, labels }: { c: Candidate; labels: Record<string, string> }) {
@@ -11,7 +12,7 @@ export function ScoreDetail({ c, labels }: { c: Candidate; labels: Record<string
         <b>{c.rank}위</b>
         <span className="badge neutral">{NODE_LABEL[c.type]}</span>
         <span>{c.label}</span>
-        <span className="right">종합 <b>{c.score.toFixed(3)}</b></span>
+        <span className="right">종합 <b>{c.score.toFixed(3)}</b><Help topic="causeScore" /></span>
       </div>
       <table className="t">
         <thead>
@@ -22,7 +23,7 @@ export function ScoreDetail({ c, labels }: { c: Candidate; labels: Record<string
             const f = c.factors[k]
             return (
               <tr key={k} title={f.note} style={{ height: 'auto' }}>
-                <td style={{ verticalAlign: 'top', paddingTop: 8 }}>{labels[k] ?? k}</td>
+                <td style={{ verticalAlign: 'top', paddingTop: 8 }}>{labels[k] ?? k}{k === 'lift' && <Help topic="lift" />}{k === 'arima' && <Help topic="arima" />}{k === 'condition' && <Help topic="learned" />}</td>
                 <td style={{ whiteSpace: 'normal', padding: '6px 10px' }}>
                   <ScoreBar value={c.contributions[k]} max={maxContribution} />
                   <div className="faint" style={{ fontSize: 12, marginTop: 3 }}>{f.note}</div>
@@ -34,7 +35,7 @@ export function ScoreDetail({ c, labels }: { c: Candidate; labels: Record<string
           })}
         </tbody>
       </table>
-      {c.specificity?.note && <div className="notice warn" style={{ fontSize: 12 }}>공통 경로 보정: {c.specificity.note}</div>}
+      {c.specificity?.note && <div className="notice warn" style={{ fontSize: 12 }}>공통 경로 보정<Help topic="commonPath" />: {c.specificity.note}</div>}
     </div>
   )
 }

@@ -113,6 +113,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "serve":
         import uvicorn
 
+        # 코드가 업데이트됐을 수 있으니 실행 전에 DB 마이그레이션을 맞춘다 (이미 최신이면 아무것도 안 함)
+        init_db()
         s = get_settings()
         uvicorn.run("app.main:app", host=s.server_host, port=s.server_port, workers=1)
 
