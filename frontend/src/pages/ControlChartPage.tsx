@@ -34,7 +34,7 @@ export function ControlChartPage() {
           <div className="table-wrap" style={{ maxHeight: 'calc(100vh - 210px)' }}>
             <table className="t">
               <thead>
-                <tr><th>부품/공정 · 특성</th><th style={{ width: 64 }}>관리도</th><th className="num" style={{ width: 56 }}>미확인</th></tr>
+                <tr><th>부품/공정 · 특성</th><th style={{ width: 64 }}>관리도</th><th className="num" style={{ width: 56 }} title="미확인 이상 사건 수 (같은 이상에 함께 걸린 위반은 1건)">미확인</th></tr>
               </thead>
               <tbody>
                 {rows.map((c) => (
@@ -42,7 +42,7 @@ export function ControlChartPage() {
                     onClick={() => setParams({ char: String(c.id) })}>
                     <td title={`${c.owner} · ${c.name}`}><span className="muted">{c.owner}</span> · {c.name}</td>
                     <td>{CHART_LABEL[c.chart_type]}</td>
-                    <td className="num">{c.open_violations > 0 ? <b style={{ color: 'var(--danger)' }}>{c.open_violations}</b> : 0}</td>
+                    <td className="num" title={`위반 ${c.open_violations}건`}>{c.open_events > 0 ? <b style={{ color: 'var(--danger)' }}>{c.open_events}</b> : 0}</td>
                   </tr>
                 ))}
               </tbody>
@@ -67,6 +67,10 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
     ...raw,
     points: raw.points.map((p) => ({ ...p, rules: p.rules.filter((x) => visible.has(x)) })),
     violations: raw.violations.filter((v) => visible.has(v.rule_no)),
+    // 사건은 볼 룰이 하나라도 걸린 것만, 라벨도 볼 룰만
+    events: raw.events
+      .map((e) => ({ ...e, rule_nos: e.rule_nos.filter((r) => visible.has(r)) }))
+      .filter((e) => e.rule_nos.length > 0),
   }, [raw, visible])
 
   const options = useMemo(() => (d ? buildOptions(d) : null), [d])
@@ -111,22 +115,24 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
       </Panel>
 
       <div className="grid cols-2">
-        <Panel title={<>위반 ({d.violations.length}){d.violations.length !== raw?.violations.length && <span className="faint" style={{ fontWeight: 400 }}> / 전체 {raw?.violations.length}</span>}<Help topic="nelson" /></>} flush>
+        <Panel title={<>이상 사건 ({d.events.length}){d.events.length !== raw?.events.length && <span className="faint" style={{ fontWeight: 400 }}> / 전체 {raw?.events.length}</span>}
+          <span className="faint" style={{ fontWeight: 400 }}> · 위반 {d.violations.length}건</span><Help topic="spcEvent" /></>} flush>
           <div className="table-wrap" style={{ maxHeight: 300 }}>
             <table className="t">
-              <thead><tr><th style={{ width: 56 }}>룰</th><th>내용</th><th style={{ width: 150 }}>발생 시각</th><th className="num" style={{ width: 60 }}>점 수</th></tr></thead>
+              <thead><tr><th>걸린 룰</th><th style={{ width: 76 }}>방향</th><th style={{ width: 150 }}>발생 시각</th><th className="num" style={{ width: 60 }}>점 수</th></tr></thead>
               <tbody>
-                {d.violations.map((v, i) => (
-                  <tr key={i} className="clickable" onClick={() => openLot(v.last_index)}>
-                    <td><RuleBadge rule={v.rule_no} /></td>
-                    <td title={v.description}>{v.description}</td>
-                    <td>{fmtDateTime(v.occurred_at)}</td>
-                    <td className="num">{v.points.length}</td>
+                {[...d.events].reverse().map((e) => (
+                  <tr key={e.signal_index} className="clickable" onClick={() => openLot(e.last_index)}
+                    title={e.violations.map((i) => raw?.violations[i]).filter((v) => v && visible.has(v.rule_no)).map((v) => `R${v!.rule_no} ${v!.description}`).join('\n')}>
+                    <td style={{ whiteSpace: 'normal' }}>{e.rule_nos.map((r) => <RuleBadge key={r} rule={r} />)}</td>
+                    <td>{e.direction > 0 ? '▲ 상승' : e.direction < 0 ? '▼ 하락' : '↕ 양쪽'}</td>
+                    <td>{fmtDateTime(e.occurred_at)}</td>
+                    <td className="num">{e.last_index - e.first_index + 1}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {d.violations.length === 0 && <Empty>위반이 없습니다.</Empty>}
+            {d.events.length === 0 && <Empty>위반이 없습니다.</Empty>}
           </div>
         </Panel>
         <div className="stack">
