@@ -23,11 +23,20 @@ def _merge(default: Any, override: Any) -> Any:
     return copy.deepcopy(override) if override is not None else copy.deepcopy(default)
 
 
+# 사용자가 키를 자유롭게 정하는 항목 (그 밖의 항목은 기본값에 있는 키만 허용)
+_FREE_KEYS = ("nelson_rules", "dataset_notes")
+
+
 def get_setting(db: Session, key: str) -> Any:
     if key not in SETTING_DEFAULTS:
         raise AppError(404, f"알 수 없는 설정 항목입니다: {key}")
     row = db.get(Setting, key)
-    return _merge(SETTING_DEFAULTS[key], row.value if row else None)
+    value = row.value if row else None
+    default = SETTING_DEFAULTS[key]
+    if isinstance(default, dict) and isinstance(value, dict) and key not in _FREE_KEYS:
+        # 버전이 바뀌며 없어진 키(예: spc_rule_saturation)는 버린다. 그대로 다시 저장해도 거부되지 않게
+        value = {k: v for k, v in value.items() if k in default}
+    return _merge(default, value)
 
 
 def all_settings(db: Session) -> dict[str, Any]:
@@ -41,7 +50,7 @@ def put_setting(db: Session, key: str, value: Any, user: User | None) -> Any:
         raise AppError(422, "설정 값은 항목별 키-값 형태여야 합니다.")
     if isinstance(default, dict):
         unknown = set(value) - set(default)
-        if unknown and key not in ("nelson_rules", "dataset_notes"):
+        if unknown and key not in _FREE_KEYS:
             raise AppError(422, f"알 수 없는 설정 키입니다: {', '.join(sorted(unknown))}")
     if key == "terminology" and value.get("preset", "general") not in ("general", "injection", "diecasting"):
         raise AppError(422, "용어 프리셋은 general, injection, diecasting 중 하나여야 합니다.")

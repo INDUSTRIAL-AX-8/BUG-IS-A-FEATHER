@@ -132,30 +132,33 @@ def get_root_cause_candidates(db: Session, lot_no: str) -> tuple[dict, list[Ref]
 
 def get_spc_violations(db: Session, characteristic: str | int | None = None, from_: str | None = None,
                        to: str | None = None) -> tuple[dict, list[Ref]]:
-    stmt = select(SpcViolation, Characteristic).join(Characteristic, Characteristic.id == SpcViolation.characteristic_id)
+    """넬슨룰 위반 이력. 같은 이상에 함께 걸린 룰은 사건 1건으로 묶어 돌려준다."""
+    from app.services import spc_service
+
+    chars = select(Characteristic)
     if characteristic not in (None, ""):
         text = str(characteristic).strip()
-        if text.isdigit():
-            stmt = stmt.where(Characteristic.id == int(text))
-        else:
-            stmt = stmt.where(Characteristic.name.contains(text))
+        chars = chars.where(Characteristic.id == int(text)) if text.isdigit() else chars.where(Characteristic.name.contains(text))
+    names = {c.id: c.name for c in db.scalars(chars)}
     s, e = _parse_dt(from_), _parse_dt(to)
-    if s:
-        stmt = stmt.where(SpcViolation.occurred_at >= s)
-    if e:
-        stmt = stmt.where(SpcViolation.occurred_at <= e)
-    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = db.execute(stmt.order_by(SpcViolation.occurred_at.desc()).limit(MAX_LIST)).all()
-    lot_ids = {lid for v, _ in rows for lid in (v.lot_ids or [])[:3]}
+    events = [ev for cid in names for ev in spc_service.load_events(db, cid, s, e)]
+    events.sort(key=lambda ev: ev.occurred_at, reverse=True)
+    total = sum(len(ev.members) for ev in events)
+    shown = events[:MAX_LIST]
+    lot_ids = {lid for ev in shown for lid in ev.lot_ids[:3]}
     lot_nos = dict(db.execute(select(Lot.id, Lot.lot_no).where(Lot.id.in_(lot_ids or {-1}))).all())
-    refs = [{"kind": "violation", "id": v.id, "label": f"위반 #{v.id}", "link": f"/spc?char={c.id}"} for v, c in rows]
+    direction = {1: "상승", -1: "하락", 0: "양쪽"}
+    refs = [{"kind": "violation", "id": ev.id, "label": f"위반 #{ev.id}", "link": f"/spc?char={ev.characteristic_id}"}
+            for ev in shown]
     return {
-        "total": total, "shown": len(rows),
-        "violations": [
-            {"violation_id": v.id, "characteristic": c.name, "rule": f"R{v.rule_no}", "occurred_at": _iso(v.occurred_at),
-             "acknowledged": v.acknowledged_at is not None,
-             "lots": [lot_nos.get(i) for i in (v.lot_ids or [])[:3] if i in lot_nos]}
-            for v, c in rows
+        "total": total, "total_events": len(events), "shown": len(shown),
+        "note": "같은 이상에 함께 걸린 넬슨룰 위반은 사건 1건으로 묶었다. 사건은 가장 작은 위반 번호로 부른다.",
+        "events": [
+            {"event": f"위반 #{ev.id}", "violation_ids": ev.violation_ids, "characteristic": names[ev.characteristic_id],
+             "rules": [f"R{r}" for r in ev.rule_nos], "direction": direction[ev.direction],
+             "occurred_at": _iso(ev.occurred_at), "acknowledged": ev.acknowledged,
+             "lots": [lot_nos.get(i) for i in ev.lot_ids[:3] if i in lot_nos]}
+            for ev in shown
         ],
     }, refs
 
@@ -263,7 +266,7 @@ TOOL_SCHEMAS = [
         ["node_id"]),
     _fn("get_root_cause_candidates", "불량 LOT 의 원인 후보 상위 5개와 요소별 근거를 조회한다.",
         {"lot_no": {"type": "string"}}, ["lot_no"]),
-    _fn("get_spc_violations", "측정 특성의 넬슨룰 위반 이력을 조회한다.",
+    _fn("get_spc_violations", "측정 특성의 넬슨룰 위반 이력을 조회한다. 같은 이상에 함께 걸린 룰은 사건 1건으로 묶여 있다.",
         {"characteristic": {"type": "string", "description": "특성 이름 일부 또는 ID"},
          "from": {"type": "string", "description": "시작 (ISO 날짜)"}, "to": {"type": "string", "description": "끝 (ISO 날짜)"}},
         []),

@@ -1,7 +1,7 @@
 """원인 후보 점수 — 순수 함수. 블랙박스 없이 요소별 원점수/정규화 점수/기여도를 그대로 노출한다.
 
 요소
-  spc       (a) 해당 노드 관련 특성값의 넬슨룰 위반 룰 종류 수
+  spc       (a) 해당 노드 관련 특성값의 넬슨룰 위반 사건 수 (같은 이상에 함께 걸린 룰 여러 개는 1건)
   lift      (b) 노드를 거친 제품 vs 거치지 않은 제품의 불량률 (Beta 평활 Lift, Fisher p-value 병기)
   arima     (c) 관련 특성의 ARIMA 위험 점수 (최댓값)
   condition (d) 작업 조건 허용 범위 이탈 비율
@@ -87,8 +87,8 @@ def common_path_factor(share: float | None, threshold: float) -> float:
     return clamp01((1.0 - share) / (1.0 - threshold))
 
 
-def spc_score(rule_kinds: int, saturation: int) -> float:
-    return clamp01(rule_kinds / saturation) if saturation > 0 else 0.0
+def spc_score(events: int, saturation: int) -> float:
+    return clamp01(events / saturation) if saturation > 0 else 0.0
 
 
 def history_score(same_node: float, same_type: float, type_weight: float, saturation: float) -> float:
