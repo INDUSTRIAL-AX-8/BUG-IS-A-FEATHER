@@ -14,14 +14,14 @@ const LABELS: Record<string, [string, Record<string, string>]> = {
   cause_weights: ['원인 점수 가중치', { spc: '(a) SPC 신호', lift: '(b) 공유 불량률', arima: '(c) ARIMA 위험', condition: '(d) 작업 조건 이탈', design: '(e) 설계 불일치', history: '(f) 과거 확정 이력' }],
   cause_scoring: ['원인 분석 기준', {
     analysis_window_days: '분석 기간 (±일)', downstream_window_days: '설비/공정 영향 범위 (±일)', beta_prior_alpha: 'Lift 평활 α', beta_prior_beta: 'Lift 평활 β',
-    top_n_badges: '그래프 순위 배지 수', max_trace_depth: '최대 추적 깊이', lift_saturation: 'Lift 만점 기준', spc_rule_saturation: 'SPC 만점 룰 수',
+    top_n_badges: '그래프 순위 배지 수', max_trace_depth: '최대 추적 깊이', lift_saturation: 'Lift 만점 기준', spc_event_saturation: 'SPC 만점 사건 수',
     history_saturation: '확정 이력 만점 기준', history_type_weight: '같은 부품 종류 확정 가중치', design_ratio_tolerance: '설계 비율 기본 허용오차',
     common_share_threshold: '공통 경로 기준 비율' }],
   forecast: ['ARIMA 예측', {
     min_points: '최소 데이터 수', horizon: '예측 스텝 수', max_p: '최대 p', max_d: '최대 d', max_q: '최대 q', adf_alpha: 'ADF 유의수준',
     schedule_cron_hour: '배치 실행 시각 (시)', interval_alpha: '예측 구간 α', max_points: '적합 최대 포인트', breach_probability: '예상 이탈 확률 기준',
     trend_window: '추세 판단 포인트', flat_threshold_sigma: '평탄 판단 (σ 배수)' }],
-  control_chart: ['관리도', { imr_max_n: 'I-MR 최대 n', xbar_r_max_n: 'Xbar-R 최대 n', min_baseline_subgroups: '기준 구간 최소 서브그룹', recompute_interval_minutes: 'SPC 재계산 주기 (분)', min_regime_subgroups: '체제별 기준선 최소 데이터' }],
+  control_chart: ['관리도', { imr_max_n: 'I-MR 최대 n', xbar_r_max_n: 'Xbar-R 최대 n', min_baseline_subgroups: '기준 구간 최소 서브그룹', recompute_interval_minutes: 'SPC 재계산 주기 (분)', min_regime_subgroups: '체제별 기준선 최소 데이터', event_gap_points: '위반 사건 묶기 간격 (점)' }],
   trace: ['계보 추적', { default_depth: '기본 깊이', max_depth: '최대 깊이', max_nodes: '최대 노드 수' }],
 }
 

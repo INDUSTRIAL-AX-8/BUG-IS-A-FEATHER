@@ -50,6 +50,8 @@ from app.models import (
     node_key,
     parse_node_key,
 )
+from app.core.spc.events import SpcEvent
+from app.services import spc_service
 from app.services import trace_service as ts
 from app.services.lot_service import is_out_of_range
 from app.services.settings_service import get_setting
@@ -286,11 +288,10 @@ def _lift_factor(ctx: Context, seeds: set[int], cache: dict) -> FactorResult:
     return FactorResult(lift_score(st, ctx.cfg["lift_saturation"]), raw, note)
 
 
-def _load_violations(ctx: Context) -> list[tuple[int, int, set[int], datetime]]:
+def _load_violations(ctx: Context) -> list[SpcEvent]:
+    """분석 기간(± 정방향 범위)의 위반을 사건으로 묶어 둔다. 같은 이상에 걸린 룰 여러 개는 사건 1건."""
     start, end = ctx.window[0] - ctx.W, ctx.window[1] + ctx.W
-    stmt = select(SpcViolation.characteristic_id, SpcViolation.rule_no, SpcViolation.lot_ids,
-                  SpcViolation.occurred_at).where(SpcViolation.occurred_at >= start, SpcViolation.occurred_at <= end)
-    return [(c, r, set(l or []), t) for c, r, l, t in ctx.db.execute(stmt)]
+    return spc_service.load_events(ctx.db, start=start, end=end)
 
 
 def _spc_factor(ctx, ntype, nid, runs, seeds, violations) -> FactorResult:
@@ -302,12 +303,14 @@ def _spc_factor(ctx, ntype, nid, runs, seeds, violations) -> FactorResult:
     if ntype == NodeType.CONDITION:
         return FactorResult(0.0, {"applicable": False}, "조건 항목은 SPC 대상 아님")
     targets = {nid} if ntype == NodeType.LOT else {r.lot_id for r in runs}
-    hits = [(c, r) for c, r, lots, _ in violations if lots & targets]
-    rules = sorted({r for _, r in hits})
-    raw = {"violations": len(hits), "rules": rules, "characteristics": len({c for c, _ in hits}),
-           "path_lots": len(targets)}
-    note = f"경로상 LOT 위반 {len(hits)}건, 룰 {', '.join('R%d' % r for r in rules)}" if hits else "경로상 위반 없음"
-    return FactorResult(spc_score(len(rules), ctx.cfg["spc_rule_saturation"]), raw, note)
+    hits = [e for e in violations if targets.intersection(e.lot_ids)]
+    rules = sorted({r for e in hits for r in e.rule_nos})
+    n_viol = sum(len(e.members) for e in hits)
+    raw = {"events": len(hits), "violations": n_viol, "rules": rules,
+           "characteristics": len({e.characteristic_id for e in hits}), "path_lots": len(targets)}
+    note = (f"경로상 LOT 이상 사건 {len(hits)}건 (위반 {n_viol}건, 룰 {', '.join('R%d' % r for r in rules)})"
+            if hits else "경로상 위반 없음")
+    return FactorResult(spc_score(len(hits), ctx.cfg["spc_event_saturation"]), raw, note)
 
 
 def _load_risks(ctx: Context) -> dict[int, float]:

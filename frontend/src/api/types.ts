@@ -103,6 +103,7 @@ export interface SpcCharSummary {
   chart_type: string
   measurements: number
   open_violations: number
+  open_events: number // 같은 이상에 함께 걸린 위반은 1건
   limit_version: number | null
 }
 
@@ -158,7 +159,37 @@ export interface ChartData {
     points: number[]
     occurred_at: string
   }[]
+  // 같은 이상에 함께 걸린 위반 묶음. violations 는 위 violations 배열의 인덱스
+  events: {
+    violations: number[]
+    rule_nos: number[]
+    direction: number
+    first_index: number
+    last_index: number
+    signal_index: number
+    occurred_at: string
+  }[]
   points: ChartPoint[]
+}
+
+/** 같은 특성 · 같은 방향 · 가까운 시각의 넬슨룰 위반 묶음. id 는 가장 작은 위반 번호 */
+export interface SpcEventRow {
+  id: number
+  violation_ids: number[]
+  unacknowledged_ids: number[]
+  characteristic_id: number
+  characteristic: string
+  owner: string | null
+  direction: number
+  direction_label: string
+  rule_nos: number[]
+  rules: { rule_no: number; description: string }[]
+  occurred_at: string
+  point_count: number
+  lot_ids: number[]
+  lot_nos: (string | null)[]
+  acknowledged: boolean
+  partially_acknowledged: boolean
 }
 
 export interface ViolationRow {

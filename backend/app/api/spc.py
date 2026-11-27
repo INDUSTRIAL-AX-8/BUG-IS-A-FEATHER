@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,10 @@ from app.services import audit, spc_service
 from app.services.settings_service import get_setting
 
 router = APIRouter(prefix="/spc", tags=["SPC"])
+
+
+class EventAckIn(BaseModel):
+    violation_ids: list[int] = Field(min_length=1, max_length=2000)
 
 
 class LimitIn(BaseModel):
@@ -54,6 +58,10 @@ def characteristic_summary(db: Session = Depends(get_db), _=Depends(viewer)):
         .where(SpcViolation.acknowledged_at.is_(None))
         .group_by(SpcViolation.characteristic_id)
     ).all())
+    open_e: dict[int, int] = {}
+    for e in spc_service.load_events(db):
+        if not e.acknowledged:
+            open_e[e.characteristic_id] = open_e.get(e.characteristic_id, 0) + 1
     out = []
     for c in db.scalars(select(Characteristic).order_by(Characteristic.name)):
         lim = spc_service.locked_limit(db, c.id)
@@ -64,6 +72,7 @@ def characteristic_summary(db: Session = Depends(get_db), _=Depends(viewer)):
             "chart_type": spc_service.resolved_chart_type(db, c),
             "measurements": counts.get(c.id, 0),
             "open_violations": open_v.get(c.id, 0),
+            "open_events": open_e.get(c.id, 0),  # 같은 이상에 함께 걸린 위반은 1건
             "limit_version": lim.version if lim else None,
         })
     return out
@@ -185,3 +194,68 @@ def acknowledge(violation_id: int, db: Session = Depends(get_db), user: User = D
     audit.record(db, user, "acknowledge", "spc_violation", v.id, before=before, after=audit.snapshot(v))
     db.commit()
     return {"id": v.id, "acknowledged_at": v.acknowledged_at}
+
+
+DIRECTION_LABEL = {1: "상승", -1: "하락", 0: "양쪽"}
+
+
+def event_rows(db: Session, events: list) -> list[dict]:
+    chars = {c.id: c for c in db.scalars(
+        select(Characteristic).where(Characteristic.id.in_({e.characteristic_id for e in events} or {-1})))}
+    items, steps = _owner_names(db)
+    defaults = get_setting(db, "nelson_rules")
+    lot_ids = {lid for e in events for lid in e.lot_ids}
+    lot_nos = dict(db.execute(select(Lot.id, Lot.lot_no).where(Lot.id.in_(lot_ids or {-1}))).all())
+    out = []
+    for e in events:
+        c = chars[e.characteristic_id]
+        cfg = merge_config(defaults, c.rule_config)
+        out.append({
+            "id": e.id, "violation_ids": e.violation_ids, "unacknowledged_ids": e.unacknowledged_ids,
+            "characteristic_id": c.id, "characteristic": c.name,
+            "owner": items.get(c.item_type_id) if c.item_type_id else steps.get(c.process_step_id),
+            "direction": e.direction, "direction_label": DIRECTION_LABEL[e.direction],
+            "rule_nos": e.rule_nos,
+            "rules": [{"rule_no": r, "description": describe(r, cfg[r]["params"])} for r in e.rule_nos],
+            "occurred_at": e.occurred_at,
+            "point_count": e.last_index - e.first_index + 1,
+            "lot_ids": e.lot_ids, "lot_nos": [lot_nos.get(i) for i in e.lot_ids][:20],
+            "acknowledged": e.acknowledged, "partially_acknowledged": e.partially_acknowledged,
+        })
+    return out
+
+
+@router.get("/events")
+def list_events(
+    characteristic_id: int | None = None,
+    acknowledged: bool | None = None,
+    start: datetime | None = Query(default=None, alias="from"),
+    end: datetime | None = Query(default=None, alias="to"),
+    limit: int = Query(default=200, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    _=Depends(viewer),
+):
+    """같은 특성 · 같은 방향 · 가까운 시각의 위반을 사건 1건으로 묶은 목록 (최근 먼저)."""
+    events = spc_service.load_events(db, characteristic_id, start, end)
+    if acknowledged is not None:
+        events = [e for e in events if e.acknowledged == acknowledged]
+    return event_rows(db, events[:limit])
+
+
+@router.post("/events/ack")
+def acknowledge_event(body: EventAckIn, db: Session = Depends(get_db), user: User = Depends(operator)):
+    """사건 확인: 사건에 속한 미확인 위반을 모두 확인 처리한다 (감사 로그는 위반별)."""
+    rows = db.scalars(select(SpcViolation).where(SpcViolation.id.in_(set(body.violation_ids)))).all()
+    if not rows:
+        raise not_found("SPC 위반")
+    pending = [v for v in rows if v.acknowledged_at is None]
+    if not pending:
+        raise AppError(409, "이미 확인된 사건입니다.")
+    now = datetime.now()
+    for v in pending:
+        before = audit.snapshot(v)
+        v.acknowledged_at = now
+        v.acknowledged_by = user.id
+        audit.record(db, user, "acknowledge", "spc_violation", v.id, before=before, after=audit.snapshot(v))
+    db.commit()
+    return {"acknowledged": len(pending), "acknowledged_at": now}

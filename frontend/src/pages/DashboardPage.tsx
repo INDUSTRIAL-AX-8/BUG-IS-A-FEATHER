@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Judgment } from '../api/causes'
 import { api, errorText } from '../api/client'
-import type { ViolationRow } from '../api/types'
+import type { SpcEventRow } from '../api/types'
 import { useAuth } from '../auth'
 import { AXIS_STYLE, CHART_FONT, EChart, type EChartsOption } from '../components/EChart'
 import { Empty, Level, Loading, Metric, PageHead, Panel, RuleBadge, ScoreBar } from '../components/ui'
@@ -57,13 +57,13 @@ export function riskLevel(r: number | null): 'ok' | 'warn' | 'danger' {
 const RISK_TEXT = { ok: '정상', warn: '주의', danger: '위험' }
 
 export function DashboardPage() {
-  const violations = useAsync(() => api.get<ViolationRow[]>('/spc/violations', { acknowledged: false, limit: 200 }), [])
+  const events = useAsync(() => api.get<SpcEventRow[]>('/spc/events', { acknowledged: false, limit: 200 }), [])
   const watch = useAsync(() => api.get<{ disclaimer: string; items: WatchItem[] }>('/forecast/watchlist'), [])
   const defects = useAsync(() => api.get<Judgment[]>('/defects', { limit: 12 }), [])
   const summary = useAsync(() => api.get<{ total: number; confirmed: number }>('/defects/summary'), [])
   const accuracy = useAsync(() => api.get<Accuracy>('/accuracy').catch(() => null), [])
   const [selected, setSelected] = useState<number | null>(null)
-  useLiveRefresh(() => { violations.reload(); defects.reload(); summary.reload() }, 1500)
+  useLiveRefresh(() => { events.reload(); defects.reload(); summary.reload() }, 1500)
 
   const watchItems = watch.data?.items ?? []
   const risky = watchItems.filter((w) => (w.risk_score ?? 0) >= 0.5).length
@@ -74,7 +74,8 @@ export function DashboardPage() {
       <PageHead title="대시보드" />
       <div className="grid cols-4" style={{ marginBottom: 12 }}>
         <Metric label="불량 판정 (누적)" value={summary.data?.total ?? '-'} hint={summary.data ? `원인 확정 ${summary.data.confirmed}건` : undefined} />
-        <Metric label="미확인 SPC 위반" value={violations.data?.length ?? '-'} hint="확인 처리 전 위반" />
+        <Metric label="미확인 SPC 이상 사건" value={events.data?.length ?? '-'}
+          hint={events.data ? `위반 ${events.data.reduce((n, e) => n + e.unacknowledged_ids.length, 0)}건을 사건으로 묶음` : '확인 처리 전 사건'} />
         <Metric label="주의 부품 (위험 ≥ 0.5)" value={watch.data ? risky : '-'} hint="ARIMA 예측 기준" />
         <Metric label="원인 Top-3 정확도" value={accuracy.data?.overall.top3 != null ? fmtPct(accuracy.data.overall.top3) : '-'}
           hint={accuracy.data ? <Link to="/accuracy">확정 {accuracy.data.overall.total}건 기준 · 자세히</Link> : '확정 데이터 없음'} />
@@ -104,7 +105,7 @@ export function DashboardPage() {
           </table>
           {defects.data && !defects.data.length && <Empty>불량 판정이 없습니다.</Empty>}
         </Panel>
-        <ViolationsPanel rows={violations.data} error={violations.error} loading={violations.loading} height={420} />
+        <SpcEventsPanel rows={events.data} error={events.error} loading={events.loading} height={420} onAcked={events.reload} />
       </div>
     </>
   )
@@ -226,32 +227,66 @@ function ForecastChart({ charId }: { charId: number }) {
   )
 }
 
-export function ViolationsPanel(props: { rows: ViolationRow[] | null; error: string | null; loading: boolean; height?: number }) {
+const DIRECTION_MARK: Record<number, string> = { 1: '▲', [-1]: '▼', 0: '↕' }
+
+export function SpcEventsPanel(props: {
+  rows: SpcEventRow[] | null; error: string | null; loading: boolean; height?: number; onAcked: () => void
+}) {
+  const { can } = useAuth()
+  const [busy, setBusy] = useState<number | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const ack = async (e: SpcEventRow) => {
+    setBusy(e.id); setErr(null)
+    try {
+      await api.post('/spc/events/ack', { violation_ids: e.unacknowledged_ids })
+      props.onAcked()
+    } catch (x) {
+      setErr(errorText(x))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const operator = can('OPERATOR')
   return (
-    <Panel title={<>미확인 SPC 위반<Help topic="nelson" /></>} actions={<Link to="/spc">관리도 보기</Link>} flush>
-      <Loading error={props.error} loading={props.loading && !props.rows} />
+    <Panel title={<>미확인 SPC 이상 사건<Help topic="spcEvent" /></>} actions={<Link to="/spc">관리도 보기</Link>} flush>
+      <Loading error={props.error ?? err} loading={props.loading && !props.rows} />
       <div className="table-wrap" style={{ maxHeight: props.height ?? 360 }}>
         <table className="t">
           <thead>
-            <tr><th style={{ width: 130 }}>발생 시각</th><th>부품/공정 · 특성</th><th style={{ width: 52 }}>룰</th><th>관련 LOT</th></tr>
+            <tr>
+              <th style={{ width: 130 }}>발생 시각</th><th>부품/공정 · 특성</th><th>걸린 룰</th><th>관련 LOT</th>
+              {operator && <th style={{ width: 64 }} />}
+            </tr>
           </thead>
           <tbody>
-            {(props.rows ?? []).map((r) => (
-              <tr key={r.id}>
-                <td>{fmtDateTime(r.occurred_at)}</td>
-                <td><Link to={`/spc?char=${r.characteristic_id}`}>{r.owner} · {r.characteristic}</Link></td>
-                <td title={r.description}><RuleBadge rule={r.rule_no} /></td>
-                <td title={r.lot_nos.join(', ')}>
-                  {r.lot_nos.slice(0, 3).map((no) => no && (
+            {(props.rows ?? []).map((e) => (
+              <tr key={e.id}>
+                <td>{fmtDateTime(e.occurred_at)}</td>
+                <td>
+                  <Link to={`/spc?char=${e.characteristic_id}`}>{e.owner} · {e.characteristic}</Link>
+                  <span className="muted" title={`방향: ${e.direction_label}`}> {DIRECTION_MARK[e.direction]}</span>
+                </td>
+                <td style={{ whiteSpace: 'normal' }} title={e.rules.map((r) => `R${r.rule_no} ${r.description}`).join('\n')}>
+                  {e.rule_nos.map((r) => <RuleBadge key={r} rule={r} />)}
+                  {e.partially_acknowledged && <span className="faint" style={{ marginLeft: 4 }}>새 룰 추가</span>}
+                </td>
+                <td title={e.lot_nos.join(', ')}>
+                  {e.lot_nos.slice(0, 2).map((no) => no && (
                     <Link key={no} to={`/genealogy?lot=${encodeURIComponent(no)}`} style={{ marginRight: 6 }}>{no}</Link>
                   ))}
-                  {r.lot_nos.length > 3 && <span className="faint">외 {r.lot_nos.length - 3}</span>}
+                  {e.lot_nos.length > 2 && <span className="faint">외 {e.lot_nos.length - 2}</span>}
                 </td>
+                {operator && (
+                  <td>
+                    <button className="small" disabled={busy === e.id} onClick={() => ack(e)}
+                      title={`이 사건의 위반 ${e.unacknowledged_ids.length}건을 확인 처리`}>확인</button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
-        {props.rows && props.rows.length === 0 && <div className="empty">미확인 위반이 없습니다.</div>}
+        {props.rows && props.rows.length === 0 && <div className="empty">미확인 이상 사건이 없습니다.</div>}
       </div>
     </Panel>
   )

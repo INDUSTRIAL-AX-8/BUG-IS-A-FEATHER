@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.spc.charts import ChartError, ChartPoint, Limits, Subgroup, chart_points, choose_chart, compute_limits
+from app.core.spc.events import SpcEvent, ViolationInfo, group_events, violation_direction
 from app.core.spc.nelson import Violation, describe, evaluate, merge_config
 from app.errors import AppError, not_found
 from app.models import (
@@ -212,7 +213,7 @@ def recompute_violations(db: Session, char: Characteristic) -> int:
         lot_ids = sorted({lid for p in pts for lid in p.subgroup.lot_ids})
         payload = [
             {"index": p.index, "subgroup": p.subgroup.key, "measured_at": p.subgroup.time.isoformat(),
-             "value": round(p.value, 6), "lot_ids": p.subgroup.lot_ids}
+             "value": round(p.value, 6), "z": round(p.z, 4), "lot_ids": p.subgroup.lot_ids}
             for p in pts
         ]
         row = existing.get(key)
@@ -230,6 +231,42 @@ def recompute_violations(db: Session, char: Characteristic) -> int:
         db.execute(delete(SpcViolation).where(SpcViolation.id.in_(stale)))
     db.commit()
     return len(seen)
+
+
+def _event_gap(db: Session) -> int:
+    return int(get_setting(db, "control_chart")["event_gap_points"])
+
+
+def violation_info(row: SpcViolation) -> ViolationInfo:
+    """저장된 위반 → 사건 묶기 입력. 포함 점의 z 가 없는(이전 버전에서 저장된) 위반은 방향을 모르는 것으로 본다."""
+    pts = row.points or []
+    indices = [int(p["index"]) for p in pts if "index" in p]
+    zs = [p["z"] for p in pts if p.get("z") is not None]
+    values = [p["value"] for p in pts if p.get("value") is not None]
+    occurred = row.occurred_at.isoformat()
+    signal = next((int(p["index"]) for p in pts if p.get("measured_at") == occurred and "index" in p),
+                  min(indices, default=0))
+    return ViolationInfo(
+        id=row.id, characteristic_id=row.characteristic_id, rule_no=row.rule_no,
+        point_indices=indices or [signal], signal_index=signal,
+        direction=violation_direction(row.rule_no, zs if len(zs) == len(pts) else None, values),
+        occurred_at=row.occurred_at, acknowledged=row.acknowledged_at is not None, lot_ids=list(row.lot_ids or []),
+    )
+
+
+def load_events(
+    db: Session, characteristic_id: int | None = None, start: datetime | None = None, end: datetime | None = None,
+) -> list[SpcEvent]:
+    """저장된 위반을 사건으로 묶어 돌려준다 (최근 사건 먼저)."""
+    stmt = select(SpcViolation)
+    if characteristic_id is not None:
+        stmt = stmt.where(SpcViolation.characteristic_id == characteristic_id)
+    if start is not None:
+        stmt = stmt.where(SpcViolation.occurred_at >= start)
+    if end is not None:
+        stmt = stmt.where(SpcViolation.occurred_at <= end)
+    events = group_events((violation_info(r) for r in db.scalars(stmt)), _event_gap(db))
+    return sorted(events, key=lambda e: e.occurred_at, reverse=True)
 
 
 def recompute_all(db: Session) -> dict[int, int]:
@@ -324,6 +361,16 @@ def chart_payload(db: Session, char_id: int, start: datetime | None, end: dateti
             "lot_nos": [lot_nos.get(i) for i in p.subgroup.lot_ids],
             "rules": sorted(set(marks.get(p.index, []))),
         })
+    infos = [
+        ViolationInfo(
+            id=i, characteristic_id=char.id, rule_no=v.rule_no, point_indices=list(v.points), signal_index=v.first_index,
+            direction=violation_direction(v.rule_no, [state.points[j].z for j in v.points],
+                                          [state.points[j].value for j in v.points]),
+            occurred_at=state.points[v.first_index].subgroup.time,
+        )
+        for i, v in enumerate(state.violations)
+    ]
+    events = sorted(group_events(infos, _event_gap(db)), key=lambda e: e.signal_index)
     lim = state.limits
     return {
         "characteristic": {
@@ -358,6 +405,13 @@ def chart_payload(db: Session, char_id: int, start: datetime | None, end: dateti
                 "occurred_at": state.points[v.first_index].subgroup.time,
             }
             for v in state.violations
+        ],
+        # 같은 이상에 함께 걸린 위반 묶음. violations 는 위 violations 목록의 인덱스
+        "events": [
+            {"violations": e.violation_ids, "rule_nos": e.rule_nos, "direction": e.direction,
+             "first_index": e.first_index, "last_index": e.last_index, "signal_index": e.signal_index,
+             "occurred_at": e.occurred_at}
+            for e in events
         ],
         "points": points,
     }
