@@ -7,6 +7,16 @@
 - 명세: [SPEC_불량원인추적.md](SPEC_불량원인추적.md)
 - 설계: [docs/DESIGN.md](docs/DESIGN.md)
 
+## 폐쇄망 설치
+
+인터넷 되는 PC 에서 묶고 폐쇄망 서버로 옮겨 설치하는 전체 절차(pip wheel, 프론트 빌드 산출물, Ollama 모델 반입)는
+**[docs/OFFLINE_INSTALL.md](docs/OFFLINE_INSTALL.md)** 를 보세요. 요약:
+
+1. 인터넷 PC: `scripts\bundle_offline.ps1 [-TargetLinux] [-Model 모델이름]` → `offline_bundle.zip`
+2. 서버: `pip install --no-index --find-links wheels -r requirements.lock` → `frontend_dist` 를 `frontend/dist` 로 → `python -m app.cli init-db`
+3. 데모: `seed-kamp --raw-dir <KAMP 원본 폴더>` 또는 `seed-sample` → `python -m app.cli serve`
+4. 점검: `python scripts\check_no_external.py`
+
 ## 빠른 시작 (개발 PC)
 
 ```powershell
@@ -75,6 +85,37 @@ npm run build      # frontend/dist 생성 → FastAPI 가 / 에서 서빙
 - 설정 `[llm]`: `ollama_url`, `model`, `temperature`, `num_ctx`, `timeout_seconds`. 특정 모델에 의존하지 않으며,
   개발 PC 에서는 `gemma4:26b` 로 실제 질의를 확인했습니다(CPU 환경에서 답변에 2~3분).
 
+## 데이터 입력
+
+- **업로드 화면**: CSV/Excel → 대상 선택(LOT, 계보, 공정 처리+작업 조건, 측정값, 불량 판정) → 파일 열을 시스템 필드로 **끌어다 놓아** 매핑(또는 선택) → 미리보기·검증 → 검증 통과 행만 적재. 오류 행만 CSV 로 내려받기. 매핑은 템플릿으로 저장해 현장 양식마다 재사용.
+- 검증: 필수값 누락, 숫자·날짜 형식, 존재하지 않는 LOT/부품 종류/공정/설비/특성 참조, 중복, **순환 계보**(파일 안 + 기존 DB 계보).
+- 작업 조건값은 `cond:<조건 항목 이름>` 필드로 매핑해 공정 처리와 함께 적재.
+- **REST 수집 API** (MES/LIMS 연동): `POST /api/ingest/{lots|edges|runs|measurements|defects}` 에 `{"rows": [...], "dry_run": false}`. 업로드와 같은 검증 로직, 오류 행은 응답에 행 번호와 사유로.
+
+## 권한
+
+| 역할 | 할 수 있는 일 |
+|---|---|
+| 조회자 | 모든 화면 보기, 어시스턴트 질의 |
+| 실무자 | + 불량 판정, 원인 확정, 보류/격리, SPC 위반 확인, 업로드·수집, 예측 실행 |
+| 관리자 | + 마스터, 넬슨룰, 관리한계 고정, 가중치·설정, 사용자 관리, 판정 취소, 격리 해제, 감사 로그 |
+
+비밀번호는 scrypt 해시로 저장. 인증은 `app/auth/provider.py` 의 `AuthProvider` 를 구현해 외부 인증(LDAP/SSO 등)으로 교체할 수 있습니다.
+판정, 원인 확정, 룰·설정 변경, 관리한계 재설정, 상태 일괄 변경, 적재는 모두 감사 로그(설정 > 감사 로그)에 남습니다.
+
+## 정확도 지표
+
+판정 저장 시점의 원인 후보 순위를 스냅샷으로 저장하고, 나중에 확정된 원인이 그 순위의 Top-1/3/5 안에 있었는지를
+기간별·누적으로 보여줍니다(정확도 지표 화면, 대시보드 카드). 합성 시나리오(`seed-sample`)는 판정·확정 이력을 시간순으로 재현해,
+새 원인의 첫 불량들은 순위가 낮다가 판정·확정이 쌓이면 1위로 올라오는 추이를 확인할 수 있습니다.
+
+## 3D 확장 (향후, 지금은 자리만)
+
+- 설비 마스터의 `X/Y/Z 좌표`, `3D 모델 경로` 컬럼 (nullable)
+- 시간순 통합 이벤트 API `GET /api/events?from=&to=&types=` — 공정 시작/종료, 측정, SPC 위반, 불량 판정. 설비 좌표 포함. 2D 타임라인과 3D 재생이 같은 데이터를 씀
+- 프론트 라우트 `/simulation` 의 "준비 중" 페이지: **Three.js(react-three-fiber) 는 `frontend/src/pages/SimulationPage.tsx` 에 넣습니다.** 패키지는 빌드에 포함(`npm i three @react-three/fiber`)해 CDN 없이 씁니다.
+- KAMP 프로젝트(`KAMP_Competition/app.html`)의 3D 다이캐스팅 공정 시뮬레이션이 참고 구현입니다.
+
 ## 테스트
 
 ```powershell
@@ -92,6 +133,7 @@ cd backend
 | 4 | ARIMA 자동 차수(ADF + AIC), 예측 구간, 이탈 위험 점수, 배치 스케줄, 주의 부품 순위와 예측 차트 | 완료 |
 | 4+ | KAMP 다이캐스팅 공정·실데이터·기법 적용 (아래 절) | 완료 |
 | 5 | 로컬 LLM 어시스턴트: 고정 도구 7종, Ollama tool calling + JSON 대체, 근거 링크, 도구 호출 내역, 미연결 처리 | 완료 |
+| 6 | 컬럼 매핑 업로드, REST 수집 API, 역할 권한·사용자 관리, 감사 로그 화면, 정확도 대시보드, 마스터·설정 화면, 3D 확장 자리, 오프라인 설치 문서, 외부 호출 점검 | 완료 |
 
 ## KAMP 다이캐스팅 실데이터 (권장 데모)
 

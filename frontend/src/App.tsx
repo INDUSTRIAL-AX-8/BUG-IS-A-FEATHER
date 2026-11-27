@@ -6,7 +6,12 @@ import { DashboardPage } from './pages/DashboardPage'
 import { DefectPage } from './pages/DefectPage'
 import { GenealogyPage } from './pages/GenealogyPage'
 import { LoginPage } from './pages/LoginPage'
+import { AccuracyPage } from './pages/AccuracyPage'
+import { MasterPage } from './pages/MasterPage'
 import { Placeholder } from './pages/Placeholder'
+import { SettingsPage } from './pages/SettingsPage'
+import { SimulationPage } from './pages/SimulationPage'
+import { UploadPage } from './pages/UploadPage'
 
 export function App() {
   const { user, ready } = useAuth()
@@ -19,11 +24,11 @@ export function App() {
         <Route path="/spc" element={<ControlChartPage />} />
         <Route path="/genealogy" element={<GenealogyPage />} />
         <Route path="/defects" element={<DefectPage />} />
-        <Route path="/master" element={<Placeholder title="마스터 관리" />} />
-        <Route path="/upload" element={<Placeholder title="데이터 업로드" />} />
-        <Route path="/settings" element={<Placeholder title="설정" />} />
-        <Route path="/accuracy" element={<Placeholder title="정확도 지표" />} />
-        <Route path="/simulation" element={<Placeholder title="3D 시뮬레이션" />} />
+        <Route path="/master" element={<MasterPage />} />
+        <Route path="/upload" element={<UploadPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/accuracy" element={<AccuracyPage />} />
+        <Route path="/simulation" element={<SimulationPage />} />
         <Route path="*" element={<Placeholder title="없는 화면" />} />
       </Routes>
     </Layout>

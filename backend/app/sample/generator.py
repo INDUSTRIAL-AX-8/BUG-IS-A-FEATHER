@@ -389,3 +389,33 @@ def generate(db: Session, seed: int = 42, reset: bool = False, run_analysis: boo
 
         scenario.counts["SPC 위반 수"] = sum(recompute_all(db).values())
     return scenario
+
+
+def simulate_feedback(db: Session, scenario: Scenario, confirm_prob: float = 0.85, seed: int = 0) -> dict[str, int]:
+    """판정이 들어온 순서대로 '판정 시점 후보 스냅샷 → 실무자 원인 확정'을 재현한다 (정확도 지표 데모).
+
+    심어 둔 원인이 있는 판정만 확정한다(원자재 LOT 영향 → 그 LOT, 설비 이상 → 그 설비).
+    스냅샷은 그 시점까지의 판정·확정만 보고 계산하므로(as_of) 확정 이력이 쌓이는 효과가 드러난다.
+    """
+    from app.models import NodeType, RootCauseConfirmation
+    from app.services.cause_service import analyze, save_snapshot
+
+    rng = np.random.default_rng(seed)
+    truth = {**{no: (NodeType.LOT, scenario.planted_raw_lot_id) for no in scenario.planted_defect_lot_nos},
+             **{no: (NodeType.EQUIPMENT, scenario.planted_equipment_id) for no in scenario.anomaly_defect_lot_nos}}
+    judge = db.scalar(select(User).where(User.username == "operator"))
+    rows = db.execute(select(DefectJudgment, Lot).join(Lot, Lot.id == DefectJudgment.lot_id)
+                      .order_by(DefectJudgment.judged_at)).all()
+    snaps = confirms = 0
+    for j, lot in rows:
+        result = analyze(db, lot, as_of=j.judged_at, defect_type_id=j.defect_type_id)
+        save_snapshot(db, j, result, j.judged_at)
+        snaps += 1
+        if lot.lot_no in truth and rng.random() < confirm_prob:
+            ntype, nid = truth[lot.lot_no]
+            db.add(RootCauseConfirmation(judgment_id=j.id, node_type=ntype, node_id=nid, confidence=1.0,
+                                         memo="샘플: 조사 후 확정", confirmed_by=judge.id if judge else None,
+                                         confirmed_at=j.judged_at + timedelta(hours=6)))
+            confirms += 1
+        db.commit()
+    return {"스냅샷": snaps, "원인 확정": confirms}

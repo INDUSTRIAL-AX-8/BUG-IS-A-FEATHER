@@ -57,12 +57,15 @@ def main(argv: list[str] | None = None) -> None:
         from app.db import SessionLocal
         from app.sample.generator import generate
 
+        from app.sample.generator import simulate_feedback
         from app.services.forecast_service import run_all
 
         with SessionLocal() as db:
             scenario = generate(db, seed=args.seed, reset=args.reset)
             print("ARIMA 예측 실행 중…")
             run_all(db)
+            print("판정·원인 확정 이력 재현 중…")
+            scenario.counts.update(simulate_feedback(db, scenario))
         print("샘플 데이터 생성 완료.")
         for key, value in scenario.summary().items():
             print(f"  {key}: {value}")
