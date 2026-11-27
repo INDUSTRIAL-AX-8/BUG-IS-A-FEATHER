@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'
 import { Layout } from './components/Layout'
 import { ControlChartPage } from './pages/ControlChartPage'
@@ -15,7 +15,7 @@ import { TermsProvider } from './lib/terms'
 import { LiveProvider } from './lib/live'
 import { LotsPage } from './pages/LotsPage'
 import { ReviewPage } from './pages/ReviewPage'
-import { ProductionPage } from './pages/ProductionPage'
+import { OverviewPage } from './pages/OverviewPage'
 import { DefectDataPage } from './pages/DefectDataPage'
 import { NotesPage } from './pages/NotesPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -32,13 +32,14 @@ export function App() {
     <LiveProvider>
     <Layout>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={<OverviewPage />} />
+        <Route path="/monitor" element={<DashboardPage />} />
         <Route path="/spc" element={<ControlChartPage />} />
         <Route path="/genealogy" element={<GenealogyPage />} />
         <Route path="/drivers" element={<DriversPage />} />
         <Route path="/lots" element={<LotsPage />} />
         <Route path="/review" element={<ReviewPage />} />
-        <Route path="/production" element={<ProductionPage />} />
+        <Route path="/production" element={<Navigate to="/" replace />} />
         <Route path="/defect-data" element={<DefectDataPage />} />
         <Route path="/notes" element={<NotesPage />} />
         <Route path="/defects" element={<DefectPage />} />

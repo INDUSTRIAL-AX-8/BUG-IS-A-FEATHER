@@ -71,7 +71,7 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHead title="대시보드" />
+      <PageHead title="현장 모니터링" sub="실시간 수집 · SPC 위반 · ARIMA 주의 부품 · 최근 불량" />
       <div className="grid cols-4" style={{ marginBottom: 12 }}>
         <Metric label="불량 판정 (누적)" value={summary.data?.total ?? '-'} hint={summary.data ? `원인 확정 ${summary.data.confirmed}건` : undefined} />
         <Metric label="미확인 SPC 위반" value={violations.data?.length ?? '-'} hint="확인 처리 전 위반" />

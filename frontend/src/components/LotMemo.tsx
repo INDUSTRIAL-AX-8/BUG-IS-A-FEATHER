@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Icon } from './Icon'
 import { useNavigate } from 'react-router-dom'
 import { api, errorText } from '../api/client'
 import type { Lot } from '../api/types'
@@ -86,6 +87,7 @@ export function GlobalSearch() {
   }
   return (
     <div className="search" ref={box}>
+      <span className="ico"><Icon name="search" /></span>
       <input value={q} placeholder={`${t('lotNo')} 또는 메모 내용으로 검색`} onChange={(e) => setQ(e.target.value)} onFocus={() => hits.length && setOpen(true)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, hits.length - 1)) }

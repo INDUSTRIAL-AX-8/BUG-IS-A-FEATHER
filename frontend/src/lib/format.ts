@@ -14,7 +14,8 @@ export function fmtNum(v: number | null | undefined, digits = 3): string {
   if (v === null || v === undefined || Number.isNaN(v)) return '-'
   const abs = Math.abs(v)
   if (abs !== 0 && (abs >= 1e6 || abs < 1e-3)) return v.toExponential(2)
-  return Number(v.toFixed(digits)).toString()
+  const n = Number(v.toFixed(digits))
+  return abs >= 1000 ? n.toLocaleString('ko-KR', { maximumFractionDigits: digits }) : n.toString()
 }
 
 export function fmtPct(v: number | null | undefined, digits = 1): string {

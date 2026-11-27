@@ -407,7 +407,7 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
             <OrbitControls makeDefault target={[lay.ship[0] / 2, 0, 0]} maxPolarAngle={Math.PI / 2.1} />
           </Canvas>
           <div style={{ position: 'absolute', left: 10, top: 10, color: '#e9edf2', fontSize: 13, background: 'rgba(17,22,29,0.8)', padding: '8px 10px', borderRadius: 3, lineHeight: 1.6 }}>
-            <div>{props.mode === 'live' ? (live.status?.running ? '● 실시간 수집 중' : '○ 실시간 수집 꺼짐 — 대시보드에서 시작') : '▶ 기록 재생'}</div>
+            <div>{props.mode === 'live' ? (live.status?.running ? '● 실시간 수집 중' : '○ 실시간 수집 꺼짐 — 현장 모니터링에서 시작') : '▶ 기록 재생'}</div>
             <div>기록 시각 <b>{fmtDateTime(new Date(sim.current.ms - new Date().getTimezoneOffset() * 60000).toISOString())}</b></div>
             <div>생산 {engine.totals.produced.toLocaleString()} · 불량 {engine.totals.defects.toLocaleString()} ({fmtPct(rate)})</div>
           </div>

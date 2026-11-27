@@ -57,7 +57,7 @@ export function ChangePasswordPage({ forced = false }: { forced?: boolean }) {
 
   if (forced) {
     return (
-      <div className="login">
+      <div className="login-center">
         <Panel title="불량 원인 추적 · 비밀번호 변경">{form}</Panel>
       </div>
     )

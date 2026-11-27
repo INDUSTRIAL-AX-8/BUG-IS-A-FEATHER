@@ -29,7 +29,7 @@ export function RtdbPanel({ height = 330 }: { height?: number }) {
         {Object.keys(TABLE_LABEL).filter((t) => counts[t]).map((t) => (
           <span key={t} className="badge neutral" style={{ borderLeft: `3px solid ${TABLE_COLOR[t]}` }}>{TABLE_LABEL[t]} {counts[t]}</span>
         ))}
-        {!Object.keys(counts).length && <span className="faint" style={{ fontSize: 12 }}>대시보드에서 실시간 수집을 시작하면 행이 쌓입니다.</span>}
+        {!Object.keys(counts).length && <span className="faint" style={{ fontSize: 12 }}>현장 모니터링에서 실시간 수집을 시작하면 행이 쌓입니다.</span>}
       </div>
       {running && (
         <div style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
