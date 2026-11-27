@@ -31,7 +31,11 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const [elapsed, setElapsed] = useState(0)
   const end = useRef<HTMLDivElement>(null)
 
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [msgs, busy])
+  // 중괄호 필수: 최신 Chrome 의 scrollIntoView 는 Promise 를 반환하는데, 그대로 돌려주면 React 가
+  // 정리 함수로 호출하다 "destroy is not a function" 으로 화면 전체가 내려간다.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' })
+  }, [msgs, busy])
   useEffect(() => {
     if (!busy) return
     const t0 = Date.now()
