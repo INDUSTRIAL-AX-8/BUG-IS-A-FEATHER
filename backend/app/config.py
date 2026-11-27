@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     llm_model: str = "qwen2.5:7b-instruct"
     llm_temperature: float = 0.1
     llm_num_ctx: int = 8192
-    llm_timeout_seconds: float = 120.0
+    llm_timeout_seconds: float = 300.0  # 로컬 대형 모델은 답변에 수 분 걸릴 수 있음
 
     # [kamp] KAMP 다이캐스팅 원본 CSV 폴더 (seed-kamp 기본값)
     kamp_raw_dir: str | None = None

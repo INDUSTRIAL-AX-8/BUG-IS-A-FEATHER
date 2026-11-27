@@ -42,7 +42,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <NavLink to="/simulation"><span className="num" />3D 시뮬레이션</NavLink>
       </nav>
       <main className="main">{children}</main>
-      {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
+      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   )
 }
