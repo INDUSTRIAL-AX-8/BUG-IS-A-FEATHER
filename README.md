@@ -87,7 +87,7 @@ cd backend
 
 ```powershell
 cd backend
-.venv\Scripts\python -m app.cli seed-kamp --reset --raw-dir C:\경로\KAMP_Competition\dataaw
+.venv\Scripts\python -m app.cli seed-kamp --reset --raw-dir C:\경로\KAMP_Competition\data\raw
 ```
 
 | 원본 | 이 시스템 |
