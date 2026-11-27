@@ -131,3 +131,26 @@ def test_defect_list_returns_quantity(rv):
     assert all(r["lot_qty"] for r in rows)
     # 집계 기록은 판정 1건에 여러 개 불량: 수량 합계가 판정 건수보다 커야 한다
     assert sum(r["defect_qty"] for r in rows if r["defect_qty"] is not None) > len(rows)
+
+
+def test_overview_period_compare_and_summary(rv):
+    ctx, _ = rv
+    c, h = ctx.client, ctx.h
+    full = c.get("/api/production/overview", headers=h["viewer"]).json()
+    assert full["bucket"] == "day" and full["trend"] and full["by_equipment"][0]["name"] == "사출기 3호"
+    assert full["targets"]["defect_rate"] == 0.015 and full["summary"]
+    assert "금형 온도" in full["summary"][0]
+    assert full["data_range"]["from"] and full["previous"] is None  # 전체 기간 앞에는 기록 없음
+    # 짧은 기간: 일 단위, 직전 같은 길이 기간과 비교
+    r = c.get("/api/production/overview", headers=h["viewer"], params={"from": "2026-03-05T12:00:00", "to": "2026-03-06T23:59:59"}).json()
+    assert r["bucket"] == "day" and len(r["trend"]) <= 3
+    assert r["previous"] and r["previous"]["kpi"]["produced"] > 0
+    assert r["previous"]["period"]["to"] < r["period"]["from"]
+    eq = r["by_equipment"][0]
+    assert eq["produced"] == r["kpi"]["produced"] and eq["defects"] == r["kpi"]["confirmed_defects"]
+
+
+def test_production_range(rv):
+    ctx, _ = rv
+    r = ctx.client.get("/api/production/range", headers=ctx.h["viewer"]).json()
+    assert r["from"].startswith("2026-03-04") and r["to"] >= r["from"]

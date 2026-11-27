@@ -107,4 +107,6 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "process_lines": {},
     # 설비 이름 → 시간당 생산 능력(CAPA, 개/시간). 없으면 기록된 최대 시간당 생산 수로 추정
     "capacity": {},
+    # 경영 현황 목표 (불량률·가동률). KPI 카드에 목표 대비 상태로 표시
+    "targets": {"defect_rate": 0.015, "utilization": 0.85},
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, errorText } from '../api/client'
 import type { DefectType } from '../api/types'
 import { useAuth } from '../auth'
+import { toast } from '../components/Toast'
 import { Help } from '../components/Help'
 import { Empty, Field, Level, Loading, PageHead, Panel } from '../components/ui'
 import { fmtDateTime, fmtNum } from '../lib/format'
@@ -56,10 +57,9 @@ export function ReviewPage() {
       <PageHead title="불량 판정" sub={`실시간 수집·검사에서 자동으로 걸린 '불량 의심'을 공정 단계별로 모았습니다. 실무자가 판정해 확정한 것만 불량 데이터로 적재됩니다.`}>
         <Link to="/defect-data"><button>적재된 불량 데이터 보기</button></Link>
       </PageHead>
-      <div className="row" style={{ gap: 0, marginBottom: 12, borderBottom: '2px solid var(--border)' }}>
-        {([['PENDING', `판정 대기 ${summary.data?.pending_total ?? ''}`], ['CONFIRMED', '불량 확정 (적재됨)'], ['REJECTED', '불량 아님'], ['ALL', '전체']] as const).map(([k, label]) => (
-          <button key={k} onClick={() => setStatus(k)} style={{ height: 40, padding: '0 22px', border: 0, borderRadius: 0, fontSize: 14, fontWeight: status === k ? 700 : 400,
-            background: 'transparent', borderBottom: status === k ? '3px solid var(--primary)' : '3px solid transparent', marginBottom: -2, color: status === k ? 'var(--primary)' : 'var(--muted)' }}>{label}</button>
+      <div className="tabs" role="tablist">
+        {([['PENDING', '판정 대기', summary.data?.pending_total], ['CONFIRMED', '불량 확정 (적재됨)', undefined], ['REJECTED', '불량 아님', undefined], ['ALL', '전체', undefined]] as const).map(([k, label, n]) => (
+          <button key={k} role="tab" aria-selected={status === k} className={status === k ? 'on' : ''} onClick={() => setStatus(k)}>{label}{n != null && <span className="n">{n}</span>}</button>
         ))}
       </div>
       <div className="grid" style={{ gridTemplateColumns: `repeat(${Math.max(1, (summary.data?.stages.length ?? 0) + 1)}, minmax(0, 1fr))`, marginBottom: 12 }}>
@@ -102,10 +102,10 @@ export function ReviewPage() {
                 ))}
               </tbody>
             </table>
-            {list.data && !rows.length && <Empty>{status === 'PENDING' ? '검토 대기 중인 의심이 없습니다. 대시보드에서 실시간 수집을 시작하면 쌓입니다.' : '해당 건이 없습니다.'}</Empty>}
+            {list.data && !rows.length && <Empty>{status === 'PENDING' ? '검토 대기 중인 의심이 없습니다. 현장 모니터링에서 실시간 수집을 시작하면 쌓입니다.' : '해당 건이 없습니다.'}</Empty>}
           </div>
         </Panel>
-        {current ? <ReviewPanel s={current} reasons={summary.data?.reject_reasons ?? []} onDone={(text) => { setMsg(text); reload() }} /> : (
+        {current ? <ReviewPanel s={current} reasons={summary.data?.reject_reasons ?? []} onDone={(text) => { toast(text); reload() }} /> : (
           <Panel title="판단"><div className="muted" style={{ fontSize: 13, lineHeight: 1.7 }}>
             왼쪽에서 의심 건을 고르세요.<br />
             1. 해당 {t('lot')}을 재검·확인합니다.<br />

@@ -11,6 +11,7 @@ type Settings = Record<string, Record<string, unknown>>
 
 // 설정 키별 한국어 라벨. 여기에 없는 키도 그대로 편집할 수 있다.
 const LABELS: Record<string, [string, Record<string, string>]> = {
+  targets: ['경영 현황 목표', { defect_rate: '목표 불량률 (0.015 = 1.5%)', utilization: '목표 CAPA 가동률 (0.85 = 85%)' }],
   cause_weights: ['원인 점수 가중치', { spc: '(a) SPC 신호', lift: '(b) 공유 불량률', arima: '(c) ARIMA 위험', condition: '(d) 작업 조건 이탈', design: '(e) 설계 불일치', history: '(f) 과거 확정 이력' }],
   cause_scoring: ['원인 분석 기준', {
     analysis_window_days: '분석 기간 (±일)', downstream_window_days: '설비/공정 영향 범위 (±일)', beta_prior_alpha: 'Lift 평활 α', beta_prior_beta: 'Lift 평활 β',

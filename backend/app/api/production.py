@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -54,6 +54,101 @@ def dashboard(
     db: Session = Depends(get_db),
     _=Depends(viewer),
 ):
+    return _compute(db, start, end, equipment_id)
+
+
+def _bounds(db: Session, eq_ids: list[int]) -> tuple[datetime | None, datetime | None]:
+    q = select(func.min(ProcessRun.started_at), func.max(ProcessRun.started_at)).where(ProcessRun.equipment_id.in_(eq_ids))
+    lo, hi = db.execute(q).one()
+    return lo, hi
+
+
+@router.get("/range")
+def data_range(db: Session = Depends(get_db), _=Depends(viewer)):
+    """생산 기록이 있는 기간 (기간 선택의 기준일)."""
+    mains = _main_equipment(db)
+    lo, hi = _bounds(db, [e.id for e in mains]) if mains else (None, None)
+    return {"from": lo, "to": hi}
+
+
+@router.get("/overview")
+def overview(
+    start: datetime | None = Query(default=None, alias="from"),
+    end: datetime | None = Query(default=None, alias="to"),
+    equipment_id: int | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(viewer),
+):
+    """경영 현황: 기간 KPI + 직전 같은 길이 기간 비교, 일/주 추이, 설비별, 원인 Top, 한 줄 요약."""
+    cur = _compute(db, start, end, equipment_id)
+    if cur.get("message"):
+        return cur
+    s, e = cur["period"]["from"], cur["period"]["to"]
+    span = e - s
+    prev = _compute(db, s - span - timedelta(seconds=1), s - timedelta(seconds=1), equipment_id) if span.total_seconds() > 0 else None
+    pk = prev["kpi"] if prev and not prev.get("message") and prev["kpi"]["produced"] else None
+    lo, hi = _bounds(db, [x["id"] for x in cur["equipment"]])
+    cur["previous"] = {"period": prev["period"], "kpi": pk} if pk else None
+    cur["data_range"] = {"from": lo, "to": hi}
+    cur["targets"] = get_setting(db, "targets")
+    cur["bucket"] = "week" if span.days > 45 else "day"
+    cur["trend"] = _fill(_weekly(cur["series"]) if cur["bucket"] == "week" else cur["series"], s.date(), e.date(), cur["bucket"])
+    cur["summary"] = _summary(cur)
+    return cur
+
+
+def _fill(trend: list[dict], start: date, end: date, bucket: str) -> list[dict]:
+    """기록이 없는 날·주도 축에 남긴다 (생산 0, 불량률 없음) — 빈 기간을 건너뛴 선이 추세를 속이지 않게."""
+    have = {t["date"]: t for t in trend}
+    step = 7 if bucket == "week" else 1
+    cur = start - timedelta(days=start.weekday()) if bucket == "week" else start
+    out = []
+    while cur <= end and len(out) < 400:
+        k = cur.isoformat()
+        out.append(have.get(k) or {"date": k, "produced": 0.0, "defects": 0.0, "hours": 0.0, "capa": 0.0,
+                                   "stop_hours": 0.0, "rate": None, "utilization": None})
+        cur += timedelta(days=step)
+    return out
+
+
+def _weekly(series: list[dict]) -> list[dict]:
+    weeks: dict[str, dict] = {}
+    for d in series:
+        day = date.fromisoformat(d["date"])
+        monday = (day - timedelta(days=day.weekday())).isoformat()
+        w = weeks.setdefault(monday, {"date": monday, "produced": 0.0, "defects": 0.0, "hours": 0.0, "capa": 0.0, "stop_hours": 0.0})
+        for k in ("produced", "defects", "hours", "capa", "stop_hours"):
+            w[k] += d.get(k, 0.0)
+    out = []
+    for w in sorted(weeks.values(), key=lambda x: x["date"]):
+        w["rate"] = w["defects"] / w["produced"] if w["produced"] else 0.0
+        w["utilization"] = w["produced"] / w["capa"] if w["capa"] else None
+        out.append(w)
+    return out
+
+
+def _summary(d: dict) -> list[str]:
+    """경영진용 한 줄 요약 (최대 3줄). 숫자는 모두 이 응답 안의 값."""
+    k, t, out = d["kpi"], d["targets"], []
+    if not k["produced"]:
+        return ["선택한 기간에 생산 기록이 없습니다."]
+    causes = [c for c in d["top_causes"] if c.get("share")]
+    if causes and k["confirmed_defects"]:
+        c = causes[0]
+        out.append(f"불량의 {c['share']:.0%}가 {c['cause'].replace(' 범위 이탈', '')} 범위 이탈 구간({c.get('range', '')})에서 늘었습니다. "
+                   f"범위 밖 불량률 {c['rate_out']:.1%}, 모든 조건 정상일 때 {c['rate_in']:.1%}.")
+    goal = t.get("defect_rate")
+    if goal:
+        gap = k["defect_rate"] - goal
+        out.append(f"불량률 {k['defect_rate']:.2%} — 목표 {goal:.2%} " + (f"대비 {gap * 100:.2f}%p 높습니다." if gap > 0 else "이내입니다."))
+    if k["utilization"] is not None:
+        out.append(f"CAPA 가동률 {k['utilization']:.1%}, 설비 정지 {k['stops']}회 {k['stop_hours']:.1f}시간.")
+    if k["pending_suspects"]:
+        out.append(f"불량 판정 대기 {k['pending_suspects']}건은 아직 불량 수에 들어가지 않았습니다.")
+    return out[:4]
+
+
+def _compute(db: Session, start: datetime | None, end: datetime | None, equipment_id: int | None) -> dict:
     mains = _main_equipment(db)
     if equipment_id is not None:
         mains = [e for e in mains if e.id == equipment_id]
@@ -131,7 +226,22 @@ def dashboard(
     if direct > 0:
         by_stage["이력·직접 등록"] += direct
 
+    by_eq: dict[int, dict] = {e.id: {"id": e.id, "name": e.name, "produced": 0.0, "defects": 0.0, "capa": 0.0} for e in mains}
+    for r, l in runs:
+        b = by_eq[r.equipment_id]
+        hours = max((r.ended_at - r.started_at).total_seconds() / 3600, 0) if r.ended_at else 1.0
+        b["produced"] += float(l.qty or 1)
+        b["defects"] += confirmed.get(l.id, 0.0)
+        b["capa"] += caps[r.equipment_id] * hours
+    for ev in stops:
+        hours = (ev.ended_at - ev.started_at).total_seconds() / 3600 if ev.ended_at else 1.0
+        by_eq[ev.equipment_id]["capa"] += caps.get(ev.equipment_id, 0.0) * hours
+    for b in by_eq.values():
+        b["rate"] = b["defects"] / b["produced"] if b["produced"] else 0.0
+        b["utilization"] = b["produced"] / b["capa"] if b["capa"] else None
+
     return {
+        "by_equipment": list(by_eq.values()),
         "equipment": [{"id": e.id, "name": e.name, "capacity_per_hour": caps[e.id],
                        "capacity_source": "설정" if cap_setting.get(e.name) else "기록된 최대 시간당 생산 수"} for e in mains],
         "period": {"from": start, "to": end},
