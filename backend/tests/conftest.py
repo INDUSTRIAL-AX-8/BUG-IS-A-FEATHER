@@ -58,14 +58,14 @@ def open_client(app) -> TestClient:
     """TestClient 를 열어 둔다. 요청마다 이벤트 루프를 새로 만들지 않아 Windows 소켓 생성을 줄이고,
     일부 샌드박스에서 이벤트 루프용 socketpair 생성이 간헐적으로 실패(WinError 10014)하므로 재시도한다."""
     client = TestClient(app)
-    for attempt in range(5):
+    for attempt in range(30):
         try:
             client.__enter__()
             break
         except OSError:
-            if attempt == 4:
+            if attempt == 29:
                 raise
-            time.sleep(0.2)
+            time.sleep(0.2 + attempt * 0.05)
     _OPEN_CLIENTS.append(client)
     return client
 
