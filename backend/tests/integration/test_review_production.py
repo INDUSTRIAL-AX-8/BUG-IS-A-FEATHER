@@ -118,3 +118,16 @@ def test_defect_data_csv(rv):
     text = r.content.decode("utf-8-sig")
     assert r.status_code == 200 and text.splitlines()[0].startswith("판정ID")
     assert "이력·직접 등록" in text and "외관 검사" in text  # 이력 + 의심 확정분
+
+
+def test_defect_list_returns_quantity(rv):
+    """불량 데이터 화면이 쓰는 목록 API 가 판정별 불량 수량을 돌려준다 (없으면 화면이 판정 1건 = 1개로 셈)."""
+    ctx, _ = rv
+    rows = ctx.client.get("/api/defects", params={"limit": 2000}, headers=ctx.h["viewer"]).json()
+    with ctx.db() as db:
+        stored = dict(db.execute(select(DefectJudgment.id, DefectJudgment.defect_qty)
+                                 .where(DefectJudgment.is_cancelled.is_(False))).all())
+    assert rows and {r["id"]: r["defect_qty"] for r in rows} == stored
+    assert all(r["lot_qty"] for r in rows)
+    # 집계 기록은 판정 1건에 여러 개 불량: 수량 합계가 판정 건수보다 커야 한다
+    assert sum(r["defect_qty"] for r in rows if r["defect_qty"] is not None) > len(rows)
