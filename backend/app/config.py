@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # [scheduler]
     scheduler_enabled: bool = True
 
+    # [live] 실시간 수집(시연): 가짜 기록을 만들어 실제 테이블에 쌓는다. 운영 DB 에서는 false 로 꺼 둔다
+    live_simulator_enabled: bool = True
+
     @classmethod
     def settings_customise_sources(
         cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings

@@ -24,6 +24,7 @@ class LotOut(ORM):
     created_at: datetime
     qty: float | None
     status: LotStatus
+    is_simulated: bool = False  # 실시간 수집(시연)이 만든 기록
     note_count: int = 0
     last_note: str | None = None
 

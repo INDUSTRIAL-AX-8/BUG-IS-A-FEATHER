@@ -14,6 +14,8 @@
   caveats[]                      : 데이터 주의사항 → 분석 화면에 그대로 표시
   terminology                    : 화면 용어 프리셋 (general | injection | diecasting)
   capacity_per_hour              : 주 설비 시간당 생산 능력(CAPA)
+  baseline{from, to, reason, characteristics[]} : 관리한계 기준 구간(안정 운전이 확인된 시간대). 가져온 뒤 이 구간으로
+                                   한계를 고정한다. characteristics 를 주면 그 특성만 (나머지는 임시 한계)
   line[]                         : 전체 공정 흐름 (단계·설비·조건 평균/산포/범위·시간·검사 검출률) — 실시간 시연·3D 트윈용
 
 변환
@@ -51,6 +53,7 @@ from app.models import (
     Measurement,
     ProcessRun,
     ProcessStep,
+    User,
 )
 from app.sample.generator import _ensure_users, wipe
 from app.services import audit
@@ -74,6 +77,10 @@ class ProcessLogSummary:
         return {"행 수": self.rows, "LOT(시간) 수": self.lots, "설비 이벤트": self.events,
                 "생산": int(self.produced), "불량": int(self.defects), "불량률": f"{rate:.2%}",
                 "불량 판정": self.judgments, "건너뛴 행": len(self.skipped)}
+
+
+# 기준 구간으로 관리한계를 고정할 때 필요한 최소 행 수 (짧은 기록도 고정하되 화면에 권장 수 미달을 알린다)
+_MIN_BASELINE_ROWS = 4
 
 
 def load_mapping(path: Path) -> dict[str, Any]:
@@ -241,4 +248,33 @@ def import_process_log(db: Session, csv_path: Path, mapping: dict[str, Any], res
     from app.services.spc_service import recompute_all
 
     recompute_all(db)
+    _lock_baseline(db, mapping, step, eq, users["operator"])
     return summary
+
+
+def _lock_baseline(db: Session, mapping: dict[str, Any], step: ProcessStep, eq: Equipment, user: User) -> None:
+    """매핑의 baseline(안정 운전 구간)으로 이 공정 특성의 관리한계를 고정한다.
+
+    기준 구간이 없으면 '처음 n개 점' 임시 한계를 쓰게 되는데, 기록 초반에 이상 구간이 있으면 정상값이 위반으로 잡힌다.
+    기록이 짧아 권장 서브그룹 수에 못 미쳐도 고정하고(화면에 안내), 계산할 수 없으면 데이터 주의사항에 남긴다."""
+    base = mapping.get("baseline")
+    if not base:
+        return
+    from app.errors import AppError
+    from app.services.spc_service import lock_limits
+
+    start, end = datetime.fromisoformat(base["from"]), datetime.fromisoformat(base["to"])
+    failed: list[str] = []
+    only = set(base.get("characteristics") or [])
+    for char in db.scalars(select(Characteristic).where(Characteristic.process_step_id == step.id)):
+        if only and char.name not in only:
+            continue  # 안정 구간을 정할 수 없는 특성은 임시 한계로 둔다 (위반을 경보로 세지 않음)
+        try:
+            lock_limits(db, char, start, end, user, min_subgroups=_MIN_BASELINE_ROWS)
+        except AppError as exc:
+            failed.append(f"{char.name}: {exc.message}")
+    if failed:
+        notes = dict(get_setting(db, "dataset_notes"))
+        notes[eq.name] = [*notes.get(eq.name, []), *(f"관리한계 기준 구간을 고정하지 못함 — {m}" for m in failed)]
+        put_setting(db, "dataset_notes", notes, user)
+        db.commit()

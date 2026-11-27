@@ -37,6 +37,10 @@ export interface LiveStatus {
   sim_now: string | null
   step_hours: number | null
   route: { step: string; equipment: string | null; equipment_id: number | null; main: boolean; inspection: boolean }[]
+  /** 이 서버에서 시연을 켤 수 있는지 (운영 서버는 설정으로 끔) */
+  enabled?: boolean
+  /** DB 에 남아 있는 시연 기록 수 */
+  simulated?: { lots: number; equipment_events: number }
 }
 export interface LiveProgress {
   type: 'progress'; at: string; window_start: string; window_end: string; fraction: number; produced: number; planned: number
@@ -78,7 +82,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       else if (m.type === 'record') {
         setRecords((r) => [...r.slice(-(KEEP - 1)), m as LiveRecord])
         setProgress(null)
-        setStatus((s) => s && { ...s, ticks: s.ticks + 1, sim_time: m.at, phase: (m as LiveRecord).out_of_range.length || (m as LiveRecord).violations.length ? '이상' : '정상' })
+        setStatus((s) => s && { ...s, ticks: s.ticks + 1, sim_time: m.at, simulated: s.simulated && { ...s.simulated, lots: s.simulated.lots + 1 }, phase: (m as LiveRecord).out_of_range.length || (m as LiveRecord).violations.length ? '이상' : '정상' })
       } else if (m.type === 'alarm' || m.type === 'equipment_event') {
         setAlarms((a) => [m as LiveAlarm, ...a].slice(0, 30))
         if (m.type === 'equipment_event') setStatus((s) => s && { ...s, phase: '정비' })

@@ -10,11 +10,16 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.auth.deps import operator, viewer
+from app.auth.deps import admin, operator, viewer
+from app.config import get_settings
+from app.db import get_db
 from app.errors import AppError
 from app.live.simulator import SCENARIOS, get_simulator
 from app.models import User
+from app.services import audit
+from app.services.simulated_service import purge_simulated
 
 router = APIRouter(prefix="/live", tags=["실시간 수집"])
 HEARTBEAT_SEC = 15
@@ -40,6 +45,9 @@ def status(_=Depends(viewer)):
 
 @router.post("/start")
 def start(body: StartIn, _: User = Depends(operator)):
+    if not get_settings().live_simulator_enabled:
+        raise AppError(403, "이 서버에서는 실시간 수집(시연)이 꺼져 있습니다. 시연 기록은 실제 기록과 같은 DB 에 쌓이므로 "
+                            "시연용 서버에서만 켜세요 (설정 [live] simulator_enabled).")
     if body.scenario not in SCENARIOS:
         raise AppError(422, f"시나리오는 {', '.join(SCENARIOS)} 중 하나여야 합니다.")
     try:
@@ -62,6 +70,17 @@ def maintenance(_: User = Depends(operator)):
         raise AppError(409, "실시간 수집이 꺼져 있습니다.")
     sim.request_maintenance()
     return {"ok": True}
+
+
+@router.delete("/records")
+def purge_records(db: Session = Depends(get_db), user: User = Depends(admin)):
+    """시연이 만든 기록을 모두 지운다 (실제 기록은 그대로). 지운 뒤 관리도 위반을 다시 계산한다."""
+    if get_simulator().state.running:
+        raise AppError(409, "실시간 수집이 켜져 있습니다. 먼저 정지한 뒤 지우세요.")
+    counts = purge_simulated(db)
+    audit.record(db, user, "delete", "simulated_records", None, after=counts)
+    db.commit()
+    return counts
 
 
 @router.get("/stream")

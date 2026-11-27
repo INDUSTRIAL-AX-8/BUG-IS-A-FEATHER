@@ -108,6 +108,14 @@ class SpcState:
     rule_config: dict[int, dict]
 
 
+def is_provisional(violation: SpcViolation, char: Characteristic) -> bool:
+    """고정된 기준 구간 없이 '처음 n개 점'으로 만든 임시 한계에서 나온 위반인가.
+
+    임시 한계는 이상 구간이 기준선에 섞일 수 있어 경보로 세지 않는다. 체제(상위 LOT)별 기준선은 고정 한계 행이 없어도
+    체제마다 기준선을 따로 계산한 것이므로 임시가 아니다."""
+    return violation.control_limit_id is None and char.baseline_scope != BaselineScope.PARENT_LOT
+
+
 def analyze(db: Session, char: Characteristic, subgroups: list[Subgroup] | None = None) -> SpcState:
     chart_type = resolved_chart_type(db, char)
     if subgroups is None:
@@ -120,6 +128,10 @@ def analyze(db: Session, char: Characteristic, subgroups: list[Subgroup] | None 
     provisional = row is None or row.chart_type != chart_type
     if not provisional:
         limits = _limits_from_row(row, char.subgroup_size)
+        recommended = get_setting(db, "control_chart")["min_baseline_subgroups"]
+        if row.n_subgroups < recommended:
+            message = (f"기준 구간의 서브그룹이 {row.n_subgroups}개입니다 (권장 {recommended}개 이상). "
+                       "한계가 좁거나 넓게 잡혔을 수 있으니 안정 구간 데이터가 쌓이면 다시 고정하세요.")
     else:
         row = None
         n_base = get_setting(db, "control_chart")["min_baseline_subgroups"]
@@ -246,7 +258,9 @@ def lock_limits(
     baseline_to: datetime,
     user: User | None,
     chart_type: ChartType | None = None,
+    min_subgroups: int | None = None,
 ) -> ControlLimit:
+    """min_subgroups: 최소 서브그룹 수를 낮춰 고정할 때 (기록이 짧은 자료 가져오기). 화면에는 권장 수 미달 안내가 붙는다."""
     if baseline_from >= baseline_to:
         raise AppError(422, "기준 구간의 시작이 끝보다 앞서야 합니다.")
     if char.baseline_scope == BaselineScope.PARENT_LOT:
@@ -257,7 +271,7 @@ def lock_limits(
         audit.record(db, user, "update", "characteristic", char.id, before=before_char, after=audit.snapshot(char))
     ct = resolved_chart_type(db, char)
     subgroups = load_subgroups(db, char, baseline_from, baseline_to)
-    min_n = get_setting(db, "control_chart")["min_baseline_subgroups"]
+    min_n = min_subgroups if min_subgroups is not None else get_setting(db, "control_chart")["min_baseline_subgroups"]
     if len(subgroups) < min_n:
         raise AppError(422, f"기준 구간의 서브그룹이 {len(subgroups)}개입니다. 최소 {min_n}개가 필요합니다.")
     try:

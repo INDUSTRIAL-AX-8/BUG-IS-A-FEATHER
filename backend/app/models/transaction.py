@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +45,8 @@ class Lot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     qty: Mapped[float | None] = mapped_column(Float)
     status: Mapped[LotStatus] = mapped_column(_enum(LotStatus), default=LotStatus.NORMAL)
+    # 실시간 수집(시연)이 만든 가짜 기록. 실제 기록과 같은 테이블에 쌓이므로 구분해 표시·삭제한다
+    is_simulated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     item_type: Mapped[ItemType] = relationship()
 
@@ -192,6 +195,7 @@ class EquipmentEvent(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime)
     note: Mapped[str | None] = mapped_column(String(500))
+    is_simulated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())  # 시연이 만든 이벤트
 
 
 class LotNote(Base):
