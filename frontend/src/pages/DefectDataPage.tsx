@@ -10,7 +10,10 @@ import { useAsync } from '../lib/hooks'
 import { useLiveRefresh } from '../lib/live'
 import { useTerms } from '../lib/terms'
 
-type J = Judgment & { defect_qty?: number | null }
+type J = Judgment & { defect_qty?: number | null; lot_qty?: number | null }
+
+/** 판정의 불량 수량. 수량이 없으면 LOT 전체 불량 (CSV·생산 대시보드와 같은 규칙). */
+const defectQty = (j: J) => j.defect_qty ?? j.lot_qty ?? 1
 
 /** 불량 데이터: 실무자가 판정해 적재된 불량(불량 판정 기록) 전체. 원인 분석·생산 대시보드가 이 데이터를 쓴다. */
 export function DefectDataPage() {
@@ -24,7 +27,7 @@ export function DefectDataPage() {
   useLiveRefresh(rows.reload, 800)
   const data = rows.data ?? []
   const stats = useMemo(() => {
-    const qty = data.reduce((a, j) => a + (j.defect_qty ?? 1), 0)
+    const qty = data.reduce((a, j) => a + defectQty(j), 0)
     const viaReview = data.filter((j) => j.memo?.includes('의심 확정')).length
     return { count: data.length, qty, viaReview, direct: data.length - viaReview }
   }, [data])
@@ -65,7 +68,7 @@ export function DefectDataPage() {
                 <tr key={j.id}>
                   <td>{fmtDateTime(j.judged_at)}</td>
                   <td><Link to={`/lots?lot=${encodeURIComponent(j.lot_no)}`}>{j.lot_no}</Link></td>
-                  <td className="num">{fmtNum(j.defect_qty ?? 1, 0)}</td>
+                  <td className="num">{fmtNum(defectQty(j), 0)}</td>
                   <td>{j.defect_type}</td>
                   <td>{path(j)}</td>
                   <td>{j.judged_by ?? '-'}</td>

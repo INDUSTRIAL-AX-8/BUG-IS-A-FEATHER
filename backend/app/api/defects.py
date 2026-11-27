@@ -69,6 +69,8 @@ def _judgment_out(db: Session, j: DefectJudgment, users: dict[int, str] | None =
     return {
         "id": j.id, "lot_id": j.lot_id, "lot_no": j.lot.lot_no, "item_type": j.lot.item_type.name,
         "defect_type_id": j.defect_type_id, "defect_type": f"{j.defect_type.code} {j.defect_type.name}",
+        # defect_qty 가 null 이면 LOT 전체 불량 (CSV·생산 대시보드와 같은 규칙으로 화면이 lot_qty 를 쓴다)
+        "defect_qty": j.defect_qty, "lot_qty": j.lot.qty,
         "judged_by": users.get(j.judged_by), "judged_at": j.judged_at, "memo": j.memo,
         "attachments": j.attachments or [], "is_cancelled": j.is_cancelled,
         "root_causes": [

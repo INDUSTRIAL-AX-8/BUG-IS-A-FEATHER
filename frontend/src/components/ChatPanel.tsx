@@ -31,7 +31,11 @@ export function ChatPanel({ open, onClose }: { open: boolean; onClose: () => voi
   const [elapsed, setElapsed] = useState(0)
   const end = useRef<HTMLDivElement>(null)
 
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [msgs, busy])
+  // 본문을 중괄호로 감싸 반환값을 버린다. 최신 Chrome 은 scrollIntoView() 가 Promise 를 돌려줘서,
+  // 그대로 반환하면 React 가 정리 함수로 호출하다 'destroy is not a function' 으로 앱 전체가 하얗게 된다.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' })
+  }, [msgs, busy])
   useEffect(() => {
     if (!busy) return
     const t0 = Date.now()
