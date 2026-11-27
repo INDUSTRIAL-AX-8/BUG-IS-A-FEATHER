@@ -102,6 +102,24 @@ def search_lots(q: str = Query(min_length=1), limit: int = Query(default=10, ge=
     return [{**o.model_dump(), "matched_note": o.id in note_hits} for o in out]
 
 
+@router.get("/lots/notes/feed")
+def notes_feed(q: str | None = None, limit: int = Query(default=200, ge=1, le=2000),
+               db: Session = Depends(get_db), _=Depends(viewer)):
+    """메모된 제품 모아보기: 메모가 있는 LOT 을 최근 메모 순으로, LOT 별 메모 묶음."""
+    stmt = select(LotNote, Lot).join(Lot, Lot.id == LotNote.lot_id)
+    if q:
+        stmt = stmt.where(or_(LotNote.text.contains(q), Lot.lot_no.contains(q)))
+    rows = db.execute(stmt.order_by(LotNote.created_at.desc()).limit(limit)).all()
+    users = dict(db.execute(select(User.id, User.username)).all())
+    groups: dict[int, dict] = {}
+    for n, lot in rows:
+        g = groups.get(lot.id)
+        if g is None:
+            g = groups[lot.id] = {**ls.lot_out(lot).model_dump(), "notes": [], "last_at": n.created_at}
+        g["notes"].append(_note_out(n, users))
+    return list(groups.values())
+
+
 @router.get("/lots/{lot_no}/notes")
 def lot_notes(lot_no: str, db: Session = Depends(get_db), _=Depends(viewer)):
     lot = gs.lot_by_no(db, lot_no)

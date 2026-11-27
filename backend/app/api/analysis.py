@@ -22,9 +22,17 @@ def targets(db: Session = Depends(get_db), _=Depends(viewer)):
     counts = dict(db.execute(select(ProcessRun.equipment_id, func.count()).group_by(ProcessRun.equipment_id)).all())
     steps = dict(db.execute(select(ProcessStep.id, ProcessStep.name)).all())
     events = dict(db.execute(select(EquipmentEvent.equipment_id, func.count()).group_by(EquipmentEvent.equipment_id)).all())
-    return [{"equipment_id": e.id, "equipment": e.name, "process_step": steps.get(e.process_step_id),
-             "runs": counts.get(e.id, 0), "events": events.get(e.id, 0)}
-            for e in db.scalars(select(Equipment).order_by(Equipment.name)) if counts.get(e.id)]
+    # 조건값이 있는 설비만 (요인이 없으면 분석할 것이 없음). 공정 흐름의 주 설비를 맨 앞에
+    from app.models import ConditionValue
+    from app.services.settings_service import get_setting
+
+    with_conds = set(db.scalars(select(ProcessRun.equipment_id).join(ConditionValue, ConditionValue.process_run_id == ProcessRun.id)
+                                .where(ProcessRun.equipment_id.is_not(None)).distinct()))
+    mains = {s.get("equipment_id") for line in get_setting(db, "process_lines").values() for s in line if s.get("main")}
+    rows = [{"equipment_id": e.id, "equipment": e.name, "process_step": steps.get(e.process_step_id),
+             "runs": counts.get(e.id, 0), "events": events.get(e.id, 0), "main": e.id in mains}
+            for e in db.scalars(select(Equipment).order_by(Equipment.name)) if counts.get(e.id) and e.id in with_conds]
+    return sorted(rows, key=lambda r: (not r["main"], -r["runs"]))
 
 
 @router.get("/drivers")

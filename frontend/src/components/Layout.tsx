@@ -11,14 +11,15 @@ import { api } from '../api/client'
 const NAV: { to: string; label: string; num: string; term?: TermKey }[] = [
   { to: '/', label: '대시보드', num: '1' },
   { to: '/production', label: '생산 대시보드', num: '2' },
-  { to: '/review', label: '불량 의심 검토', num: '3' },
-  { to: '/drivers', label: '요인 분석', num: '4', term: 'drivers' },
-  { to: '/genealogy', label: '계보 그래프', num: '5', term: 'genealogyGraph' },
-  { to: '/spc', label: '관리도', num: '6' },
-  { to: '/defects', label: '불량 판정', num: '7', term: 'defectJudgment' },
-  { to: '/master', label: '마스터 관리', num: '8' },
-  { to: '/upload', label: '데이터 업로드', num: '9' },
-  { to: '/settings', label: '설정', num: '10' },
+  { to: '/review', label: '불량 판정', num: '3' },
+  { to: '/defect-data', label: '불량 데이터', num: '4' },
+  { to: '/drivers', label: '요인 분석', num: '5', term: 'drivers' },
+  { to: '/genealogy', label: '계보 그래프', num: '6', term: 'genealogyGraph' },
+  { to: '/spc', label: '관리도', num: '7' },
+  { to: '/defects', label: '불량 직접 등록', num: '8' },
+  { to: '/master', label: '마스터 관리', num: '9' },
+  { to: '/upload', label: '데이터 업로드', num: '10' },
+  { to: '/settings', label: '설정', num: '11' },
 ]
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -58,7 +59,8 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
         ))}
         <div className="sep" />
-        <NavLink to="/lots"><span className="num" />{t('lot')} 목록·메모</NavLink>
+        <NavLink to="/notes"><span className="num" />메모 모아보기</NavLink>
+        <NavLink to="/lots"><span className="num" />{t('lot')} 목록</NavLink>
         <NavLink to="/simulation"><span className="num" />3D 디지털 트윈</NavLink>
         <NavLink to="/accuracy"><span className="num" />정확도 지표</NavLink>
       </nav>

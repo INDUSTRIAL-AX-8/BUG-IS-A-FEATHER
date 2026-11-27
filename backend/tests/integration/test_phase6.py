@@ -220,3 +220,16 @@ def test_events_with_values(fresh_sample_ctx):
     mix = [e for e in r["events"] if e["step"] == "혼합"]
     assert mix and "혼합 온도" in mix[0]["conditions"] and "out_of_range" in mix[0]["conditions"]["혼합 온도"]
     assert any(e["conditions"]["혼합 온도"]["out_of_range"] for e in mix)  # 설비 이상 기간
+
+
+def test_notes_feed_groups_by_lot(fresh_sample_ctx):
+    ctx = fresh_sample_ctx
+    c, h = ctx.client, ctx.h
+    a, b = ctx.scenario.planted_defect_lot_nos[:2]
+    c.post(f"/api/lots/{a}/notes", headers=h["operator"], json={"text": "첫 메모"})
+    c.post(f"/api/lots/{b}/notes", headers=h["operator"], json={"text": "다른 제품 메모"})
+    c.post(f"/api/lots/{a}/notes", headers=h["operator"], json={"text": "두 번째 메모"})
+    feed = c.get("/api/lots/notes/feed", headers=h["viewer"]).json()
+    assert [g["lot_no"] for g in feed] == [a, b]  # 최근 메모 순
+    assert [n["text"] for n in feed[0]["notes"]] == ["두 번째 메모", "첫 메모"]
+    assert [g["lot_no"] for g in c.get("/api/lots/notes/feed?q=다른", headers=h["viewer"]).json()] == [b]

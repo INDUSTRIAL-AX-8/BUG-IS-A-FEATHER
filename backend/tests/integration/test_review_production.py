@@ -110,3 +110,11 @@ def test_production_dashboard_capa_and_top_causes(rv):
     assert 0.8 < k["utilization"] < 1.0 and k["stops"] >= 1
     assert d["top_causes"][0]["cause"].startswith("금형 온도")
     assert d["by_type"] and d["series"]
+
+
+def test_defect_data_csv(rv):
+    ctx, _ = rv
+    r = ctx.client.get("/api/defects/export.csv", headers=ctx.h["viewer"])
+    text = r.content.decode("utf-8-sig")
+    assert r.status_code == 200 and text.splitlines()[0].startswith("판정ID")
+    assert "이력·직접 등록" in text and "외관 검사" in text  # 이력 + 의심 확정분

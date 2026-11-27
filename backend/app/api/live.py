@@ -23,7 +23,10 @@ HEARTBEAT_SEC = 15
 class StartIn(BaseModel):
     equipment_id: int | None = None
     scenario: str = Field(default="drift")
-    interval_sec: float = Field(default=2.0, ge=0.2, le=60)
+    # 배속: 실제 1초에 진행하는 기록 시간(초). 1 = 실시간. 지정하면 실제 시계(지금 시각) 기준으로 기록이 쌓인다
+    speed: float | None = Field(default=None, ge=1, le=3600)
+    # 시험용: speed 없이 interval_sec 만 주면 마지막 기록 뒤로 이 간격마다 1구간
+    interval_sec: float | None = Field(default=None, ge=0.2, le=3600)
 
 
 def _json(o):
@@ -40,7 +43,8 @@ def start(body: StartIn, _: User = Depends(operator)):
     if body.scenario not in SCENARIOS:
         raise AppError(422, f"시나리오는 {', '.join(SCENARIOS)} 중 하나여야 합니다.")
     try:
-        return get_simulator().start(body.equipment_id, body.scenario, body.interval_sec)
+        speed = body.speed if body.speed is not None or body.interval_sec is not None else 1.0
+        return get_simulator().start(body.equipment_id, body.scenario, interval_sec=body.interval_sec, speed=speed)
     except ValueError as exc:
         raise AppError(422, str(exc)) from exc
 

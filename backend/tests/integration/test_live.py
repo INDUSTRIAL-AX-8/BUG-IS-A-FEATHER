@@ -86,3 +86,22 @@ def test_live_requires_existing_records(sample_ctx):
     sim = live.LiveSimulator(sample_ctx.factory)
     with pytest.raises(ValueError):
         sim.start(999999)
+
+
+def test_real_clock_mode_uses_now_and_speed(lv):
+    from datetime import datetime, timedelta
+
+    ctx, sim = lv
+    st = sim.start(ctx.scenario.equipment_id, "drift", speed=60, seed=2)
+    try:
+        assert st["clock"] == "real" and st["speed"] == 60
+        sim_time = datetime.fromisoformat(str(st["sim_time"])) if isinstance(st["sim_time"], str) else st["sim_time"]
+        assert abs(sim_time - datetime.now()) < timedelta(minutes=2)  # 실제 지금 시각부터
+        assert st["interval_sec"] == 60  # 1시간 구간 = 실제 60초
+        prog = sim.progress(sim.sim_now())
+        assert prog["type"] == "progress" and 0 <= prog["fraction"] <= 1 and "금형 온도" in prog["values"]
+    finally:
+        sim.stop()
+    r = ctx.client.post("/api/live/start", headers=ctx.h["operator"], json={})
+    assert r.json()["clock"] == "real" and r.json()["speed"] == 1  # 기본은 실시간
+    ctx.client.post("/api/live/stop", headers=ctx.h["operator"])

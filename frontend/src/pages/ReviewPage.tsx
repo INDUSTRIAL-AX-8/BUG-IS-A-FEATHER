@@ -53,7 +53,15 @@ export function ReviewPage() {
 
   return (
     <>
-      <PageHead title="불량 의심 검토" sub={`실시간 수집·검사에서 자동으로 걸린 '불량 의심'을 공정 단계별로 모았습니다. 실무자가 확정한 것만 불량 데이터로 적재됩니다.`} />
+      <PageHead title="불량 판정" sub={`실시간 수집·검사에서 자동으로 걸린 '불량 의심'을 공정 단계별로 모았습니다. 실무자가 판정해 확정한 것만 불량 데이터로 적재됩니다.`}>
+        <Link to="/defect-data"><button>적재된 불량 데이터 보기</button></Link>
+      </PageHead>
+      <div className="row" style={{ gap: 0, marginBottom: 12, borderBottom: '2px solid var(--border)' }}>
+        {([['PENDING', `판정 대기 ${summary.data?.pending_total ?? ''}`], ['CONFIRMED', '불량 확정 (적재됨)'], ['REJECTED', '불량 아님'], ['ALL', '전체']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setStatus(k)} style={{ height: 40, padding: '0 22px', border: 0, borderRadius: 0, fontSize: 14, fontWeight: status === k ? 700 : 400,
+            background: 'transparent', borderBottom: status === k ? '3px solid var(--primary)' : '3px solid transparent', marginBottom: -2, color: status === k ? 'var(--primary)' : 'var(--muted)' }}>{label}</button>
+        ))}
+      </div>
       <div className="grid" style={{ gridTemplateColumns: `repeat(${Math.max(1, (summary.data?.stages.length ?? 0) + 1)}, minmax(0, 1fr))`, marginBottom: 12 }}>
         <StageCard title="전체" active={stage === 'all'} onClick={() => setStage('all')}
           pending={summary.data?.pending_total ?? 0} confirmed={(summary.data?.stages ?? []).reduce((a, s) => a + s.CONFIRMED, 0)}
@@ -64,14 +72,12 @@ export function ReviewPage() {
         ))}
       </div>
       <div className="split-right" style={{ gridTemplateColumns: 'minmax(0,1fr) 420px' }}>
-        <Panel flush title={<>의심 목록<Help title="불량 의심">조건 이탈: 그 단계 조건이 허용(학습) 범위를 벗어남 — 그 시간 생산분 재검 필요. 관리도 위반: 넬슨룰 신호. 검사 불합격: 외관·비전 검사가 걸러 낸 수량(과검출 포함). 실무자가 재검·확인 후 확정하거나 아니라고 판단합니다.</Help></>}
+        <Panel flush title={<>{status === 'PENDING' ? '판정할 의심' : status === 'CONFIRMED' ? '불량 확정된 의심' : status === 'REJECTED' ? '불량 아님 처리된 의심' : '전체 의심'}<Help title="불량 의심">조건 이탈: 그 단계 조건이 허용(학습) 범위를 벗어남 — 그 시간 생산분 재검 필요. 관리도 위반: 넬슨룰 신호. 검사 불합격: 외관·비전 검사가 걸러 낸 수량(과검출 포함). 실무자가 재검·확인 후 확정하거나 아니라고 판단합니다.</Help></>}
           actions={can('OPERATOR') && checked.size > 0 ? (
             <div className="row"><span className="muted">{checked.size}건 선택</span>
               <button className="small danger" onClick={() => bulk('confirm')}>일괄 불량 확정</button>
               <button className="small" onClick={() => bulk('reject')}>일괄 불량 아님</button></div>) : undefined}>
           <div className="form-row" style={{ padding: 10, borderBottom: '1px solid var(--border)' }}>
-            <div className="row">{(['PENDING', 'CONFIRMED', 'REJECTED', 'ALL'] as const).map((s) => (
-              <button key={s} className={status === s ? 'primary' : ''} onClick={() => setStatus(s)}>{s === 'ALL' ? '전체' : STATUS_TXT[s][0]}</button>))}</div>
             <select value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="">출처 전체</option>
               {Object.entries(summary.data?.sources ?? {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

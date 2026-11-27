@@ -21,7 +21,7 @@ export function LivePanel() {
   const targets = useAsync(() => api.get<Target[]>('/analysis/targets'), [])
   const [eq, setEq] = useState<number | ''>('')
   const [scenario, setScenario] = useState('drift')
-  const [interval, setIntervalSec] = useState(2)
+  const [speed, setSpeed] = useState(60)
   const [msg, setMsg] = useState<string | null>(null)
   const call = async (path: string, body?: unknown) => {
     setMsg(null)
@@ -59,7 +59,7 @@ export function LivePanel() {
     <Panel title={<>실시간 수집 <Help topic="live" /></>} actions={
       <div className="row">
         {st?.running ? <Level level={phaseLevel}>{st.equipment} · {st.phase}</Level> : <span className="faint">꺼짐</span>}
-        {st?.running && <span className="muted" style={{ fontSize: 12 }}>기록 시각 {fmtDateTime(st.sim_time)}</span>}
+        {st?.running && <span className="muted" style={{ fontSize: 12 }}>{st.clock === 'real' ? `실제 시계 · ${st.speeds?.[String(st.speed)] ?? `${st.speed}배`}` : '빠른 시연'}</span>}
       </div>}>
       <div className="stack" style={{ gap: 10 }}>
         {can('OPERATOR') ? (
@@ -71,11 +71,11 @@ export function LivePanel() {
             <select value={scenario} onChange={(e) => setScenario(e.target.value)} disabled={st?.running}>
               {Object.entries(st?.scenarios ?? { drift: '이상 발생 → 정비 → 회복', steady: '정상 운전' }).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <select value={interval} onChange={(e) => setIntervalSec(Number(e.target.value))} disabled={st?.running} title="한 기록이 들어오는 간격">
-              {[1, 2, 3, 5, 10].map((s) => <option key={s} value={s}>{s}초마다 1건</option>)}
+            <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))} disabled={st?.running} title="실제 시계 기준 배속. 1배 = 실제 1시간마다 1시간 기록">
+              {Object.entries(st?.speeds ?? { 1: '실시간', 10: '10배', 60: '60배 (1분 = 1시간)', 360: '360배 (10초 = 1시간)', 3600: '3600배 (1초 = 1시간)' }).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             {!st?.running
-              ? <button className="primary" onClick={() => call('/live/start', { equipment_id: eq || null, scenario, interval_sec: interval })}>시작</button>
+              ? <button className="primary" onClick={() => call('/live/start', { equipment_id: eq || null, scenario, speed })}>시작</button>
               : <>
                   <button onClick={() => call('/live/maintenance')} title="다음 기록에 정비 정지를 넣고 값을 정상으로 되돌립니다">정비 실시</button>
                   <button className="danger" onClick={() => call('/live/stop')}>정지</button>
@@ -85,6 +85,7 @@ export function LivePanel() {
           </div>
         ) : <div className="faint" style={{ fontSize: 12.5 }}>실시간 수집 시작·정지는 실무자 이상이 할 수 있습니다.</div>}
         {msg && <div className="notice error">{msg}</div>}
+        {st?.running && <ProgressBar />}
         {option ? <EChart option={option} height={210} /> : <div className="empty">시작하면 새 기록이 들어오는 대로 여기에 쌓입니다.</div>}
         <div className="grid cols-2" style={{ alignItems: 'start' }}>
           <div className="table-wrap" style={{ maxHeight: 220 }}>
@@ -119,5 +120,25 @@ export function LivePanel() {
         </div>
       </div>
     </Panel>
+  )
+}
+
+
+/** 진행 중인 기록 구간: 센서 스트림(몇 초마다)으로 생산 수·조건값이 올라가고, 구간이 끝나면 1건으로 적재된다. */
+function ProgressBar() {
+  const live = useLive()
+  const p = live.progress
+  const st = live.status
+  if (!p) return <div className="faint" style={{ fontSize: 12.5 }}>센서 스트림 대기 중… (구간이 끝나면 기록 1건이 적재됩니다)</div>
+  const drift = p.drift_condition
+  return (
+    <div className="row wrap" style={{ gap: 12, fontSize: 13, padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 3, background: 'var(--surface-2)' }}>
+      <span>지금 <b>{fmtDateTime(p.at)}</b></span>
+      <span className="muted">진행 중 구간 {fmtDateTime(p.window_start).slice(11)}~{fmtDateTime(p.window_end).slice(11)}</span>
+      <span style={{ flex: '1 1 160px', minWidth: 160 }}><span className="bar" style={{ display: 'block' }}><span style={{ width: `${p.fraction * 100}%` }} /></span></span>
+      <span>생산 <b>{p.produced}</b> / {p.planned}</span>
+      {drift && <span style={{ color: p.out_of_range.includes(drift) ? 'var(--danger)' : undefined }}>{drift} {p.values[drift]}{p.units[drift] ?? ''}</span>}
+      {st?.clock === 'real' && st.speed === 1 && <span className="faint">실시간: 1시간마다 기록 1건</span>}
+    </div>
   )
 }

@@ -341,6 +341,29 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
         engine.flowRecord(m, stageMs, () => force((x) => x + 1))
         for (const v of m.violations) engine.addLog(ms, `${v.characteristic} 넬슨룰 R${v.rule_no} 위반 (${m.lot_no})`, 'danger')
         sim.current.ms = ms
+      } else if (m.type === 'progress') {
+        // 센서 스트림: 주 설비 조건값·진행 중 생산 수 갱신, 부품 몇 개가 다음 설비로 흘러감
+        const key = `eq:${m.equipment_id}`
+        const s = engine.m(key)
+        const ms = Date.parse(m.at)
+        if (!(s.stopUntil && ms < s.stopUntil)) {
+          const conds: Record<string, CondVal> = {}
+          for (const [name, v] of Object.entries(m.values)) {
+            const [lo, hi, learned] = m.limits[name] ?? [null, null, false]
+            conds[name] = { value: v, unit: m.units[name] ?? null, min: lo, max: hi, learned, out_of_range: m.out_of_range.includes(name) }
+          }
+          s.values = conds
+          s.status = m.out_of_range.length ? 'alarm' : 'run'
+          s.alarm = m.out_of_range.length ? `${m.out_of_range.join(', ')} 범위 이탈` : null
+          s.lot = `진행 중 ${m.produced}/${m.planned}개`
+          const route = live.status?.route ?? []
+          const idx = route.findIndex((x) => x.equipment_id === m.equipment_id)
+          const next = idx >= 0 && idx + 1 < route.length ? route[idx + 1] : null
+          const from = engine.posOf(key)
+          const to = next ? engine.posOf(`eq:${next.equipment_id}`) : null
+          if (from && to) engine.spawn({ id: `shot-${ms}`, label: '', color: m.out_of_range.length ? '#d59a2b' : '#c9d4e3', from, to, start: performance.now(), dur: 2200, size: 0.3 })
+        }
+        sim.current.ms = ms
       } else if (m.type === 'review') {
         engine.review(m, 700)
       } else if (m.type === 'equipment_event') {

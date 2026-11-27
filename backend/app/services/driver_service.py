@@ -122,9 +122,21 @@ def build_rows(db: Session, equipment_id: int | None = None, process_step_id: in
         chunk = list(seed_lots)[i:i + 500]
         lot_nos.update(dict(db.execute(select(Lot.id, Lot.lot_no).where(Lot.id.in_(chunk))).all()))
 
+    # 판정 대기 중인 불량 의심이 있는 LOT 은 불량 수를 아직 모르므로 분석에서 뺀다 (0 으로 세면 신호가 묻힘)
+    from app.models import DefectSuspect
+
+    pending_lots: set[int] = set()
+    all_lots = list(all_finished | seed_lots)
+    for i in range(0, len(all_lots), 500):
+        pending_lots.update(db.scalars(select(DefectSuspect.lot_id).where(
+            DefectSuspect.lot_id.in_(all_lots[i:i + 500]), DefectSuspect.status == "PENDING")))
+    excluded = 0
     has_operator = any(r.operator_id for r in runs)
     rows: list[Row] = []
     for r in runs:
+        if r.lot_id in pending_lots or any(l in pending_lots for l in desc.get(r.lot_id, ())):
+            excluded += 1
+            continue
         n = k = 0.0
         types: Counter = Counter()
         for lot in desc.get(r.lot_id, ()):
@@ -150,7 +162,8 @@ def build_rows(db: Session, equipment_id: int | None = None, process_step_id: in
     if end:
         ev_stmt = ev_stmt.where(EquipmentEvent.started_at <= end)
     events = [Event(e.started_at, e.ended_at, e.kind, e.note) for e in db.scalars(ev_stmt)]
-    return {"rows": rows, "value_kinds": value_kinds, "units": units, "events": events, "top_semantics": top_semantics}
+    return {"rows": rows, "value_kinds": value_kinds, "units": units, "events": events, "top_semantics": top_semantics,
+            "excluded_pending": excluded}
 
 
 def analyze_equipment(db: Session, equipment_id: int | None = None, process_step_id: int | None = None,
@@ -160,7 +173,9 @@ def analyze_equipment(db: Session, equipment_id: int | None = None, process_step
     data = build_rows(db, equipment_id, process_step_id, start, end)
     eq = db.get(Equipment, equipment_id) if equipment_id else None
     step = db.get(ProcessStep, process_step_id) if process_step_id else None
-    notes = get_setting(db, "dataset_notes").get(eq.name, []) if eq else []
+    notes = list(get_setting(db, "dataset_notes").get(eq.name, []) if eq else [])
+    if data.get("excluded_pending"):
+        notes.append(f"불량 판정 대기 중인 기록 {data['excluded_pending']}건은 불량 수를 아직 몰라 분석에서 뺐습니다 (불량 판정 후 반영).")
     result = analyze(data["rows"], value_kinds=data["value_kinds"], units=data["units"], events=data["events"],
                      top_type_semantics=data["top_semantics"], caveats=notes, cfg=cfg)
     result["target"] = {"equipment_id": equipment_id, "equipment": eq.name if eq else None,

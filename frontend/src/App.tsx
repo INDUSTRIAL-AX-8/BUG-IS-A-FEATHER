@@ -15,6 +15,8 @@ import { LiveProvider } from './lib/live'
 import { LotsPage } from './pages/LotsPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { ProductionPage } from './pages/ProductionPage'
+import { DefectDataPage } from './pages/DefectDataPage'
+import { NotesPage } from './pages/NotesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SimulationPage } from './pages/SimulationPage'
 import { UploadPage } from './pages/UploadPage'
@@ -35,6 +37,8 @@ export function App() {
         <Route path="/lots" element={<LotsPage />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="/production" element={<ProductionPage />} />
+        <Route path="/defect-data" element={<DefectDataPage />} />
+        <Route path="/notes" element={<NotesPage />} />
         <Route path="/defects" element={<DefectPage />} />
         <Route path="/master" element={<MasterPage />} />
         <Route path="/upload" element={<UploadPage />} />

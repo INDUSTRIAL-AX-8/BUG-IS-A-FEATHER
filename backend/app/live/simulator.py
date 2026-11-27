@@ -18,6 +18,7 @@ import logging
 import queue
 import random
 import threading
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -45,6 +46,9 @@ from app.models import (
 )
 
 log = logging.getLogger(__name__)
+
+PROGRESS_SEC = 3.0  # 센서 스트림 간격 (실제 초)
+SPEEDS = {1: "실시간", 10: "10배", 60: "60배 (1분 = 1시간)", 360: "360배 (10초 = 1시간)", 3600: "3600배 (1초 = 1시간)"}
 
 SCENARIOS = {
     "drift": "주요인이 서서히 학습 범위를 벗어났다가 정비 후 회복",
@@ -82,6 +86,8 @@ class Profile:
 @dataclass
 class LiveState:
     running: bool = False
+    clock: str = "continue"  # real: 실제 시계 기준(배속) / continue: 마지막 기록 뒤로 일정 간격(시험용)
+    speed: float = 1.0  # 실제 1초당 진행하는 기록 시간(초). 1 = 실시간, 60 = 1분에 1시간
     equipment_id: int | None = None
     equipment: str | None = None
     scenario: str = "drift"
@@ -109,6 +115,7 @@ class LiveSimulator:
         self._drift_step = 0
         self._rng = random.Random()
         self._force_maintenance = False
+        self._anchor: tuple[float, datetime] | None = None
 
     # ------------------------------------------------------------ 구독
     def subscribe(self) -> queue.Queue:
@@ -136,8 +143,10 @@ class LiveSimulator:
     def status(self) -> dict[str, Any]:
         s = self.state
         return {"running": s.running, "equipment_id": s.equipment_id, "equipment": s.equipment, "scenario": s.scenario,
-                "interval_sec": s.interval_sec, "ticks": s.ticks, "sim_time": s.sim_time, "phase": s.phase,
-                "message": s.message, "drift_condition": self._drift_name(), "scenarios": SCENARIOS,
+                "interval_sec": s.interval_sec, "clock": s.clock, "speed": s.speed, "sim_now": self.sim_now(),
+                "step_hours": self._profile.step_hours if self._profile else None,
+                "ticks": s.ticks, "sim_time": s.sim_time, "phase": s.phase,
+                "message": s.message, "drift_condition": self._drift_name(), "scenarios": SCENARIOS, "speeds": SPEEDS,
                 "route": [{"step": x["step"], "equipment": x.get("equipment"), "equipment_id": x.get("equipment_id"),
                            "main": bool(x.get("main")), "inspection": bool(x.get("inspection"))}
                           for x in (self._profile.line if self._profile else [])]}
@@ -146,7 +155,17 @@ class LiveSimulator:
         p = self._profile
         return p.conds[p.drift_cond][0] if p and p.drift_cond in p.conds else None
 
-    def start(self, equipment_id: int | None, scenario: str = "drift", interval_sec: float = 2.0, seed: int | None = None) -> dict:
+    def sim_now(self) -> datetime | None:
+        """지금 기록 시각 (실제 시계 모드: 시작 시각 + 경과 × 배속)."""
+        st = self.state
+        if not st.running or st.clock != "real" or self._anchor is None:
+            return st.sim_time
+        real0, sim0 = self._anchor
+        return sim0 + timedelta(seconds=(time.monotonic() - real0) * st.speed)
+
+    def start(self, equipment_id: int | None, scenario: str = "drift", interval_sec: float | None = None,
+              seed: int | None = None, speed: float | None = None) -> dict:
+        """speed 를 주면 실제 시계 기준(지금 시각부터, 배속), interval_sec 만 주면 마지막 기록 뒤로 일정 간격(시험용)."""
         if scenario not in SCENARIOS:
             raise ValueError(f"알 수 없는 시나리오: {scenario}")
         self.stop()
@@ -156,13 +175,24 @@ class LiveSimulator:
         self._rng = random.Random(seed)
         self._drift_step = 0
         st = self.state
-        st.running, st.scenario, st.interval_sec = True, scenario, max(0.2, float(interval_sec))
+        st.running, st.scenario = True, scenario
         st.equipment_id, st.equipment = profile.equipment_id, profile.equipment
         st.ticks, st.started_at, st.phase, st.message = 0, datetime.now(), "정상", None
-        with self.session_factory() as db:
-            last = db.scalar(select(ProcessRun.started_at).where(ProcessRun.equipment_id == profile.equipment_id)
-                             .order_by(ProcessRun.started_at.desc()).limit(1))
-        st.sim_time = self._advance(last) if last else datetime.now().replace(minute=0, second=0, microsecond=0)
+        if speed is not None:
+            st.clock, st.speed = "real", max(0.1, float(speed))
+            st.interval_sec = profile.step_hours * 3600 / st.speed
+            profile.shift = None  # 실제 시계로 돌 때는 근무 시간대를 건너뛰지 않음
+            st.sim_time = datetime.now().replace(second=0, microsecond=0)
+            self._anchor = (time.monotonic(), st.sim_time)
+        else:
+            st.clock = "continue"
+            st.interval_sec = max(0.2, float(interval_sec or 2.0))
+            st.speed = profile.step_hours * 3600 / st.interval_sec
+            self._anchor = None
+            with self.session_factory() as db:
+                last = db.scalar(select(ProcessRun.started_at).where(ProcessRun.equipment_id == profile.equipment_id)
+                                 .order_by(ProcessRun.started_at.desc()).limit(1))
+            st.sim_time = self._advance(last) if last else datetime.now().replace(minute=0, second=0, microsecond=0)
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="live-simulator", daemon=True)
         self._thread.start()
@@ -183,6 +213,8 @@ class LiveSimulator:
         self._force_maintenance = True
 
     def _loop(self) -> None:
+        if self.state.clock == "real":
+            return self._loop_real()
         while not self._stop.is_set():
             try:
                 self.tick()
@@ -190,6 +222,64 @@ class LiveSimulator:
                 log.exception("실시간 시뮬레이터 오류")
                 self.state.message = f"오류: {exc.__class__.__name__}"
             self._stop.wait(self.state.interval_sec)
+
+    def _loop_real(self) -> None:
+        """실제 시계: 한 기록 구간(예: 1시간)이 끝나는 순간 그 구간 기록을 적재하고,
+        그 사이에는 몇 초마다 센서 스트림(진행 중 생산 수·조건값)을 보낸다 — 적재는 구간 단위."""
+        last_progress = 0.0
+        while not self._stop.is_set():
+            st, p = self.state, self._profile
+            try:
+                now = self.sim_now()
+                if now >= st.sim_time + timedelta(hours=p.step_hours):
+                    self.tick()  # st.sim_time 구간을 적재하고 다음 구간으로
+                    continue
+                if time.monotonic() - last_progress >= PROGRESS_SEC:
+                    last_progress = time.monotonic()
+                    self.publish(self.progress(now))
+            except Exception as exc:
+                log.exception("실시간 시뮬레이터 오류")
+                self.state.message = f"오류: {exc.__class__.__name__}"
+                self._stop.wait(PROGRESS_SEC)
+            self._stop.wait(0.5)
+
+    def progress(self, now: datetime) -> dict:
+        """진행 중인 구간의 센서 스트림 (DB 에는 쓰지 않음, 구간이 끝나면 집계해 적재)."""
+        p, st = self._profile, self.state
+        frac = max(0.0, min(1.0, (now - st.sim_time).total_seconds() / (p.step_hours * 3600)))
+        values, out = self._sample_main(advance=False, noise_rng=random.Random())
+        return {"type": "progress", "at": now, "window_start": st.sim_time,
+                "window_end": st.sim_time + timedelta(hours=p.step_hours), "fraction": frac,
+                "produced": round(p.produced * frac), "planned": round(p.produced), "equipment": p.equipment,
+                "equipment_id": p.equipment_id, "values": {p.conds[c][0]: v for c, v in values.items()},
+                "limits": {p.conds[c][0]: [p.conds[c][3], p.conds[c][4], p.conds[c][5]] for c in values},
+                "units": p.units, "out_of_range": out, "drift_condition": self._drift_name()}
+
+    def _sample_main(self, advance: bool, noise_rng: random.Random | None = None) -> tuple[dict[int, float], list[str]]:
+        p, st = self._profile, self.state
+        rng = noise_rng or self._rng
+        values: dict[int, float] = {}
+        out_names: list[str] = []
+        for cid, (name, mean, sd, lo, hi, learned) in p.conds.items():
+            v = rng.gauss(mean, sd * 0.6)
+            if cid in p.setpoints and cid != p.drift_cond:
+                v = p.setpoints[cid]
+            elif cid == p.drift_cond and st.scenario == "drift":
+                span = (hi - mean) if hi is not None else (mean - lo) if lo is not None else 3 * sd
+                shift = span * (self._drift_step / 6.0)  # 6구간 즈음 경계 도달
+                v = mean + shift + rng.gauss(0, sd * 0.3) if hi is not None else mean - shift + rng.gauss(0, sd * 0.3)
+            elif lo is not None or hi is not None:
+                if hi is not None:
+                    v = min(v, hi - abs(rng.gauss(0, sd * 0.2)))
+                if lo is not None:
+                    v = max(v, lo + abs(rng.gauss(0, sd * 0.2)))
+            v = round(v, 1)
+            values[cid] = v
+            if (lo is not None and v < lo) or (hi is not None and v > hi):
+                out_names.append(name)
+        if advance and st.scenario == "drift":
+            self._drift_step += 1
+        return values, out_names
 
     # ------------------------------------------------------------ 한 틱
     def _advance(self, t: datetime) -> datetime:
@@ -229,28 +319,7 @@ class LiveSimulator:
                 self.publish(msg)
                 return msg
 
-            values: dict[int, float] = {}
-            out_names: list[str] = []
-            for cid, (name, mean, sd, lo, hi, learned) in p.conds.items():
-                v = rng.gauss(mean, sd * 0.6)
-                if cid in p.setpoints and cid != p.drift_cond:
-                    v = p.setpoints[cid]
-                elif cid == p.drift_cond and st.scenario == "drift":
-                    span = (hi - mean) if hi is not None else (mean - lo) if lo is not None else 3 * sd
-                    shift = span * (self._drift_step / 6.0)  # 6틱 즈음 경계 도달
-                    v = mean + shift + rng.gauss(0, sd * 0.3) if hi is not None else mean - shift + rng.gauss(0, sd * 0.3)
-                elif lo is not None or hi is not None:
-                    # 드리프트 대상이 아닌 조건은 범위 안에 머무르게
-                    if hi is not None:
-                        v = min(v, hi - abs(rng.gauss(0, sd * 0.2)))
-                    if lo is not None:
-                        v = max(v, lo + abs(rng.gauss(0, sd * 0.2)))
-                v = round(v, 1)
-                values[cid] = v
-                if (lo is not None and v < lo) or (hi is not None and v > hi):
-                    out_names.append(name)
-            if st.scenario == "drift":
-                self._drift_step += 1
+            values, out_names = self._sample_main(advance=True)
 
             bad = bool(out_names)
             produced = max(1, round(p.produced))

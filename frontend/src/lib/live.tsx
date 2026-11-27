@@ -31,20 +31,32 @@ export interface LiveStatus {
   running: boolean; equipment_id: number | null; equipment: string | null; scenario: string; interval_sec: number
   ticks: number; sim_time: string | null; phase: string; message: string | null; drift_condition: string | null
   scenarios: Record<string, string>
+  speeds: Record<string, string>
+  clock: 'real' | 'continue'
+  speed: number
+  sim_now: string | null
+  step_hours: number | null
   route: { step: string; equipment: string | null; equipment_id: number | null; main: boolean; inspection: boolean }[]
 }
+export interface LiveProgress {
+  type: 'progress'; at: string; window_start: string; window_end: string; fraction: number; produced: number; planned: number
+  equipment: string; equipment_id: number; values: Record<string, number>; limits: Record<string, [number | null, number | null, boolean]>
+  units: Record<string, string | null>; out_of_range: string[]; drift_condition: string | null
+}
 export interface LiveReview { type: 'review'; suspect_id: number; lot_id: number; lot_no: string; status: 'CONFIRMED' | 'REJECTED'; qty: number; at: string }
-export type LiveMessage = LiveRecord | LiveAlarm | LiveEquipmentEvent | LiveReview | ({ type: 'status' } & LiveStatus)
+export type LiveMessage = LiveRecord | LiveAlarm | LiveEquipmentEvent | LiveReview | LiveProgress | ({ type: 'status' } & LiveStatus)
 
 interface LiveState {
   connected: boolean
   status: LiveStatus | null
   records: LiveRecord[]
   alarms: (LiveAlarm | LiveEquipmentEvent)[]
+  progress: LiveProgress | null
+  sensors: LiveProgress[]
   subscribe: (fn: (m: LiveMessage) => void) => () => void
 }
 
-const LiveContext = createContext<LiveState>({ connected: false, status: null, records: [], alarms: [], subscribe: () => () => undefined })
+const LiveContext = createContext<LiveState>({ connected: false, status: null, records: [], alarms: [], progress: null, sensors: [], subscribe: () => () => undefined })
 const KEEP = 60
 
 export function LiveProvider({ children }: { children: ReactNode }) {
@@ -52,6 +64,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<LiveStatus | null>(null)
   const [records, setRecords] = useState<LiveRecord[]>([])
   const [alarms, setAlarms] = useState<(LiveAlarm | LiveEquipmentEvent)[]>([])
+  const [progress, setProgress] = useState<LiveProgress | null>(null)
+  const [sensors, setSensors] = useState<LiveProgress[]>([])
   const listeners = useRef(new Set<(m: LiveMessage) => void>())
 
   useEffect(() => {
@@ -59,9 +73,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     const handle = (e: MessageEvent) => {
       let m: LiveMessage
       try { m = JSON.parse(e.data) } catch { return }
-      if (m.type === 'status') setStatus(m)
+      if (m.type === 'status') { setStatus(m); if (!m.running) setProgress(null) }
+      else if (m.type === 'progress') { setProgress(m); setSensors((x) => [...x.slice(-59), m]) }
       else if (m.type === 'record') {
         setRecords((r) => [...r.slice(-(KEEP - 1)), m as LiveRecord])
+        setProgress(null)
         setStatus((s) => s && { ...s, ticks: s.ticks + 1, sim_time: m.at, phase: (m as LiveRecord).out_of_range.length || (m as LiveRecord).violations.length ? '이상' : '정상' })
       } else if (m.type === 'alarm' || m.type === 'equipment_event') {
         setAlarms((a) => [m as LiveAlarm, ...a].slice(0, 30))
@@ -69,7 +85,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       listeners.current.forEach((fn) => fn(m))
     }
-    for (const t of ['status', 'record', 'alarm', 'equipment_event', 'review']) es.addEventListener(t, handle as EventListener)
+    for (const t of ['status', 'record', 'alarm', 'equipment_event', 'review', 'progress']) es.addEventListener(t, handle as EventListener)
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     return () => es.close()
@@ -79,7 +95,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     listeners.current.add(fn)
     return () => { listeners.current.delete(fn) }
   }, [])
-  return <LiveContext.Provider value={{ connected, status, records, alarms, subscribe }}>{children}</LiveContext.Provider>
+  return <LiveContext.Provider value={{ connected, status, records, alarms, progress, sensors, subscribe }}>{children}</LiveContext.Provider>
 }
 
 export function useLive() {

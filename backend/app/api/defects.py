@@ -134,6 +134,43 @@ def list_judgments(
     return [_judgment_out(db, j, users) for j in rows]
 
 
+@router.get("/export.csv")
+def export_csv(
+    start: datetime | None = Query(default=None, alias="from"),
+    end: datetime | None = Query(default=None, alias="to"),
+    db: Session = Depends(get_db),
+    _=Depends(viewer),
+):
+    """적재된 불량 데이터 내려받기 (판정 경로: 의심 확정이면 단계·출처 포함)."""
+    import csv
+    import io
+
+    from fastapi.responses import Response
+
+    from app.models import DefectSuspect, ProcessStep
+
+    stmt = select(DefectJudgment, Lot, DefectType).join(Lot, Lot.id == DefectJudgment.lot_id)         .join(DefectType, DefectType.id == DefectJudgment.defect_type_id).where(DefectJudgment.is_cancelled.is_(False))
+    if start:
+        stmt = stmt.where(DefectJudgment.judged_at >= start)
+    if end:
+        stmt = stmt.where(DefectJudgment.judged_at <= end)
+    rows = db.execute(stmt.order_by(DefectJudgment.judged_at)).all()
+    users = dict(db.execute(select(User.id, User.username)).all())
+    steps = dict(db.execute(select(ProcessStep.id, ProcessStep.name)).all())
+    via = {s.judgment_id: s for s in db.scalars(select(DefectSuspect).where(DefectSuspect.judgment_id.is_not(None)))}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["판정ID", "판정 시각", "LOT", "생산 수량", "불량 수량", "불량 유형 코드", "불량 유형", "발견 단계", "출처", "판정자", "메모"])
+    for j, lot, t in rows:
+        sus = via.get(j.id)
+        w.writerow([j.id, j.judged_at.strftime("%Y-%m-%d %H:%M"), lot.lot_no, lot.qty if lot.qty is not None else "",
+                    j.defect_qty if j.defect_qty is not None else (lot.qty or 1), t.code, t.name,
+                    steps.get(sus.process_step_id, "") if sus else "이력·직접 등록", sus.source if sus else "",
+                    users.get(j.judged_by, ""), j.memo or ""])
+    return Response(buf.getvalue().encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="defect_data.csv"'})
+
+
 @router.get("/summary")
 def summary(db: Session = Depends(get_db), _=Depends(viewer)):
     total = db.scalar(select(func.count()).select_from(DefectJudgment).where(DefectJudgment.is_cancelled.is_(False))) or 0
