@@ -14,6 +14,7 @@ from app.core.spc.nelson import describe, merge_config
 from app.db import get_db
 from app.errors import AppError, not_found
 from app.models import (
+    BaselineScope,
     Characteristic,
     ChartType,
     ControlLimit,
@@ -64,6 +65,8 @@ def characteristic_summary(db: Session = Depends(get_db), _=Depends(viewer)):
             "chart_type": spc_service.resolved_chart_type(db, c),
             "measurements": counts.get(c.id, 0),
             "open_violations": open_v.get(c.id, 0),
+            # 고정된 기준 구간이 없는 임시 한계: 위반을 경보로 세지 않는다
+            "provisional": lim is None and c.baseline_scope != BaselineScope.PARENT_LOT,
             "limit_version": lim.version if lim else None,
         })
     return out
@@ -155,6 +158,7 @@ def violation_rows(
             "point_count": len(v.points or []),
             "lot_ids": v.lot_ids, "lot_nos": [lot_nos.get(i) for i in (v.lot_ids or [])][:20],
             "acknowledged_at": v.acknowledged_at, "acknowledged_by": v.acknowledged_by,
+            "provisional": spc_service.is_provisional(v, c),
         })
     return out
 

@@ -66,6 +66,8 @@ export function DashboardPage() {
   useLiveRefresh(() => { violations.reload(); defects.reload(); summary.reload() }, 1500)
 
   const watchItems = watch.data?.items ?? []
+  const provisionalCount = (violations.data ?? []).filter((v) => v.provisional).length
+  const alarms = (violations.data ?? []).length - provisionalCount
   const risky = watchItems.filter((w) => (w.risk_score ?? 0) >= 0.5).length
   const sel = selected ?? watchItems.find((w) => w.status === 'OK')?.characteristic_id ?? null
 
@@ -74,7 +76,8 @@ export function DashboardPage() {
       <PageHead title="현장 모니터링" sub="실시간 수집 · SPC 위반 · ARIMA 주의 부품 · 최근 불량" />
       <div className="grid cols-4" style={{ marginBottom: 12 }}>
         <Metric label="불량 판정 (누적)" value={summary.data?.total ?? '-'} hint={summary.data ? `원인 확정 ${summary.data.confirmed}건` : undefined} />
-        <Metric label="미확인 SPC 위반" value={violations.data?.length ?? '-'} hint="확인 처리 전 위반" />
+        <Metric label="미확인 SPC 위반" value={violations.data ? alarms : '-'}
+          hint={provisionalCount ? `임시 한계 ${provisionalCount}건 제외 (기준 구간 미지정)` : '확인 처리 전 위반'} />
         <Metric label="주의 부품 (위험 ≥ 0.5)" value={watch.data ? risky : '-'} hint="ARIMA 예측 기준" />
         <Metric label="원인 Top-3 정확도" value={accuracy.data?.overall.top3 != null ? fmtPct(accuracy.data.overall.top3) : '-'}
           hint={accuracy.data ? <Link to="/accuracy">확정 {accuracy.data.overall.total}건 기준 · 자세히</Link> : '확정 데이터 없음'} />
@@ -233,14 +236,14 @@ export function ViolationsPanel(props: { rows: ViolationRow[] | null; error: str
       <div className="table-wrap" style={{ maxHeight: props.height ?? 360 }}>
         <table className="t">
           <thead>
-            <tr><th style={{ width: 130 }}>발생 시각</th><th>부품/공정 · 특성</th><th style={{ width: 52 }}>룰</th><th>관련 LOT</th></tr>
+            <tr><th style={{ width: 130 }}>발생 시각</th><th>부품/공정 · 특성</th><th style={{ width: 96 }}>룰</th><th>관련 LOT</th></tr>
           </thead>
           <tbody>
             {(props.rows ?? []).map((r) => (
               <tr key={r.id}>
                 <td>{fmtDateTime(r.occurred_at)}</td>
                 <td><Link to={`/spc?char=${r.characteristic_id}`}>{r.owner} · {r.characteristic}</Link></td>
-                <td title={r.description}><RuleBadge rule={r.rule_no} /></td>
+                <td title={r.description}><RuleBadge rule={r.rule_no} />{r.provisional && <span className="badge neutral" style={{ marginLeft: 4 }} title="고정된 기준 구간 없이 처음 점들로 만든 임시 한계의 위반입니다. 경보로 세지 않습니다.">임시</span>}</td>
                 <td title={r.lot_nos.join(', ')}>
                   {r.lot_nos.slice(0, 3).map((no) => no && (
                     <Link key={no} to={`/genealogy?lot=${encodeURIComponent(no)}`} style={{ marginRight: 6 }}>{no}</Link>

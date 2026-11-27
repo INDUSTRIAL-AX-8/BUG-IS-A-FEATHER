@@ -27,6 +27,12 @@ export function LivePanel() {
     setMsg(null)
     try { await api.post(path, body) } catch (e) { setMsg(errorText(e)) }
   }
+  const simulated = st?.simulated?.lots ?? 0
+  const purge = async () => {
+    if (!confirm(`시연 기록 ${simulated}건과 거기 딸린 조건값·측정값·불량 의심·판정을 지웁니다. 실제 기록은 그대로 둡니다. 계속할까요?`)) return
+    setMsg(null)
+    try { await api.del('/live/records'); location.reload() } catch (e) { setMsg(errorText(e)) }
+  }
   const recs = live.records.filter((r) => !st?.equipment_id || r.equipment_id === st.equipment_id)
   const drift = st?.drift_condition ?? recs[recs.length - 1]?.drift_condition ?? null
 
@@ -62,7 +68,9 @@ export function LivePanel() {
         {st?.running && <span className="muted" style={{ fontSize: 12 }}>{st.clock === 'real' ? `실제 시계 · ${st.speeds?.[String(st.speed)] ?? `${st.speed}배`}` : '빠른 시연'}</span>}
       </div>}>
       <div className="stack" style={{ gap: 10 }}>
-        {can('OPERATOR') ? (
+        {st?.enabled === false ? (
+          <div className="notice">이 서버에서는 실시간 수집(시연)이 꺼져 있습니다. 시연 기록은 실제 기록과 같은 DB 에 쌓이므로 시연용 서버에서만 켭니다.</div>
+        ) : can('OPERATOR') ? (
           <div className="form-row">
             <select value={eq} onChange={(e) => setEq(e.target.value ? Number(e.target.value) : '')} disabled={st?.running} title={t('equipment')}>
               <option value="">{t('equipment')} 자동 선택</option>
@@ -84,6 +92,12 @@ export function LivePanel() {
             <Link to="/simulation">3D 디지털 트윈에서 보기</Link>
           </div>
         ) : <div className="faint" style={{ fontSize: 12.5 }}>실시간 수집 시작·정지는 실무자 이상이 할 수 있습니다.</div>}
+        {simulated > 0 && (
+          <div className="notice warn row" style={{ justifyContent: 'space-between' }}>
+            <span>시연 기록 <b>{simulated}건</b>이 실제 기록과 같은 DB 에 있습니다 (목록에 '시연' 표시). 분석·대시보드 수치에 함께 반영됩니다.</span>
+            {can('ADMIN') && !st?.running && <button className="small" onClick={purge}>시연 기록 지우기</button>}
+          </div>
+        )}
         {msg && <div className="notice error">{msg}</div>}
         {st?.running && <ProgressBar />}
         {option ? <EChart option={option} height={210} /> : <div className="empty">시작하면 새 기록이 들어오는 대로 여기에 쌓입니다.</div>}

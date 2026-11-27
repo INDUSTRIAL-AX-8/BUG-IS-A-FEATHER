@@ -45,7 +45,7 @@ export function LotsPage() {
               <tbody>
                 {(rows.data ?? []).map((r) => (
                   <tr key={r.id} className={`clickable ${selected === r.lot_no ? 'selected' : ''}`} onClick={() => setParams({ lot: r.lot_no, ...(onlyNotes ? { notes: '1' } : {}) })}>
-                    <td>{r.lot_no}</td><td>{r.item_type_name}</td><td>{fmtDateTime(r.created_at)}</td>
+                    <td>{r.lot_no}{r.is_simulated && <span className="badge neutral" style={{ marginLeft: 6 }} title="실시간 수집(시연)이 만든 기록입니다. 실제 생산 기록이 아닙니다.">시연</span>}</td><td>{r.item_type_name}</td><td>{fmtDateTime(r.created_at)}</td>
                     <td className="num">{fmtNum(r.qty, 0)}</td><td><StatusBadge status={r.status} /></td>
                     <td title={r.last_note ?? ''}>{r.note_count ? <><span className="badge neutral">{r.note_count}</span> {r.last_note}</> : <span className="faint">-</span>}</td>
                   </tr>

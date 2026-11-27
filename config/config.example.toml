@@ -31,5 +31,10 @@ temperature = 0.1
 num_ctx = 8192
 timeout_seconds = 300                  # CPU/소형 GPU 에서 대형 모델은 수 분 걸릴 수 있음
 
+[live]
+# 실시간 수집(시연): 가짜 기록을 만들어 실제 기록과 같은 테이블에 쌓습니다 ('시연' 표시, 관리자가 지울 수 있음).
+# 실제 생산 데이터를 넣는 운영 서버에서는 false 로 꺼 두세요.
+simulator_enabled = true
+
 [scheduler]
 enabled = true

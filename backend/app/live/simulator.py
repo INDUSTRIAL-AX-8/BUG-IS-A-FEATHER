@@ -147,9 +147,26 @@ class LiveSimulator:
                 "step_hours": self._profile.step_hours if self._profile else None,
                 "ticks": s.ticks, "sim_time": s.sim_time, "phase": s.phase,
                 "message": s.message, "drift_condition": self._drift_name(), "scenarios": SCENARIOS, "speeds": SPEEDS,
+                "enabled": self._enabled(), "simulated": self._simulated_counts(),
                 "route": [{"step": x["step"], "equipment": x.get("equipment"), "equipment_id": x.get("equipment_id"),
                            "main": bool(x.get("main")), "inspection": bool(x.get("inspection"))}
                           for x in (self._profile.line if self._profile else [])]}
+
+    @staticmethod
+    def _enabled() -> bool:
+        from app.config import get_settings
+
+        return get_settings().live_simulator_enabled
+
+    def _simulated_counts(self) -> dict[str, int] | None:
+        """DB 에 남아 있는 시연 기록 수 (화면이 '시연 기록 n건'을 알리고 지울 수 있게)."""
+        from app.services.simulated_service import count_simulated
+
+        try:
+            with self.session_factory() as db:
+                return count_simulated(db)
+        except Exception:  # 상태 조회가 DB 문제로 실패하지 않게
+            return None
 
     def _drift_name(self) -> str | None:
         p = self._profile
@@ -307,7 +324,7 @@ class LiveSimulator:
             if maintenance:
                 self._force_maintenance = False
                 self._drift_step = 0
-                ev = EquipmentEvent(equipment_id=p.equipment_id, kind="STOP", started_at=when,
+                ev = EquipmentEvent(equipment_id=p.equipment_id, kind="STOP", started_at=when, is_simulated=True,
                                     ended_at=when + timedelta(hours=p.step_hours), note="시연: 정비 정지 (금형·온도 조절기 점검 가정)")
                 db.add(ev)
                 db.commit()
@@ -327,7 +344,7 @@ class LiveSimulator:
             operator = rng.choice(p.operators) if p.operators else None
 
             lot = Lot(lot_no=f"{p.prefix}-{when:%Y%m%d-%H%M}", item_type_id=p.item_type_id, created_at=when,
-                      qty=produced, status=LotStatus.NORMAL)
+                      qty=produced, status=LotStatus.NORMAL, is_simulated=True)
             if db.scalar(select(Lot.id).where(Lot.lot_no == lot.lot_no)):
                 lot.lot_no += f"-L{st.ticks}"
             db.add(lot)
@@ -431,7 +448,7 @@ class LiveSimulator:
             db.commit()
 
             # SPC 재계산 → 새 위반은 그 특성 공정의 '관리도 위반' 의심으로
-            from app.services.spc_service import recompute_violations
+            from app.services.spc_service import is_provisional, recompute_violations
 
             new_violations = []
             for chid in set(char_ids):
@@ -440,6 +457,8 @@ class LiveSimulator:
                 recompute_violations(db, ch)
                 for v in db.scalars(select(SpcViolation).where(SpcViolation.characteristic_id == chid)):
                     if v.id not in before and lot.id in (v.lot_ids or []):
+                        if is_provisional(v, ch):
+                            continue  # 기준 구간이 없는 임시 한계의 위반은 경보·불량 의심으로 올리지 않는다
                         new_violations.append({"id": v.id, "characteristic": ch.name, "rule_no": v.rule_no,
                                                "characteristic_id": chid})
                         pending.append(DefectSuspect(lot_id=lot.id, process_step_id=ch.process_step_id or p.step_id,
@@ -501,7 +520,9 @@ def build_profile(db: Session, equipment_id: int | None) -> Profile:
     eq = db.get(Equipment, equipment_id) if equipment_id else None
     if eq is None:
         raise ValueError("실시간 시연에 쓸 설비 기록이 없습니다. 먼저 데모 데이터를 넣으세요.")
-    runs = db.scalars(select(ProcessRun).where(ProcessRun.equipment_id == eq.id)
+    # 실제 기록에서만 배운다 (시연이 만든 기록을 다시 학습하지 않게)
+    runs = db.scalars(select(ProcessRun).join(Lot, Lot.id == ProcessRun.lot_id)
+                      .where(ProcessRun.equipment_id == eq.id, Lot.is_simulated.is_(False))
                       .order_by(ProcessRun.started_at.desc()).limit(300)).all()
     if len(runs) < 3:
         raise ValueError(f"'{eq.name}' 의 기록이 너무 적습니다 (3건 이상 필요).")

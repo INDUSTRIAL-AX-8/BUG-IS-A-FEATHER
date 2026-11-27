@@ -87,6 +87,8 @@ export interface Lot {
   created_at: string
   qty: number | null
   status: LotStatus
+  /** 실시간 수집(시연)이 만든 기록 */
+  is_simulated?: boolean
 }
 
 export interface LotDetail extends Lot {
@@ -176,5 +178,7 @@ export interface ViolationRow {
   lot_ids: number[]
   lot_nos: (string | null)[]
   acknowledged_at: string | null
+  /** 기준 구간 없이 만든 임시 한계의 위반 — 경보로 세지 않는다 */
+  provisional?: boolean
   acknowledged_by: number | null
 }

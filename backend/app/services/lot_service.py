@@ -32,6 +32,7 @@ def lot_out(lot: Lot, item_names: dict[int, str] | None = None) -> LotOut:
         created_at=lot.created_at,
         qty=lot.qty,
         status=lot.status,
+        is_simulated=lot.is_simulated,
     )
 
 
