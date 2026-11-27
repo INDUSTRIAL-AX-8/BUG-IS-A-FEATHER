@@ -103,6 +103,10 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
         candidate = (dist / path).resolve()
         if path and candidate.is_file() and dist.resolve() in candidate.parents:
             return FileResponse(candidate)
+        if "." in path.rsplit("/", 1)[-1]:
+            # 확장자가 있는 없는 파일(예: 다른 앱이 남긴 /sw.js)은 404. index.html 을 돌려주면
+            # 같은 주소(localhost:포트)를 쓰던 다른 앱의 서비스 워커가 갱신에 실패한 채 계속 살아남는다.
+            return JSONResponse({"message": "없는 파일입니다."}, status_code=404)
         # index.html 은 캐시하지 않는다 (업데이트 후 옛 번들이 남지 않게). 해시가 붙은 assets 는 캐시 가능
         return FileResponse(index, headers={"Cache-Control": "no-cache"})  # SPA 라우팅
 

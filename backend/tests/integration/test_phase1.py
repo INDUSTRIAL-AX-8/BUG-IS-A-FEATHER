@@ -153,3 +153,22 @@ def test_alembic_migration_matches_models(tmp_path):
         diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
     engine.dispose()
     assert diff == [], diff
+
+
+def test_spa_fallback_and_missing_files(tmp_path, monkeypatch):
+    """화면 경로는 index.html(캐시 안 함), 없는 파일(/sw.js 등)은 404 — 남은 서비스 워커가 스스로 해제되도록."""
+    from app.config import get_settings
+    from app.main import create_app
+    from tests.conftest import open_client
+
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    (tmp_path / "assets" / "a.js").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(get_settings(), "server_frontend_dist", str(tmp_path))
+    c = open_client(create_app(start_scheduler=False))
+    page = c.get("/genealogy")
+    assert page.status_code == 200 and "app" in page.text and page.headers["cache-control"] == "no-cache"
+    assert c.get("/assets/a.js").status_code == 200
+    assert c.get("/sw.js").status_code == 404
+    assert c.get("/service-worker.js").status_code == 404
+    assert c.get("/api/nope").status_code == 404

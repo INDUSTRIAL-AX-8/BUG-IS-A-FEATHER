@@ -50,9 +50,13 @@ def _client_for(factory) -> TestClient:
 
     app.dependency_overrides[get_db] = _get_db
     app.state.session_factory = factory
+    return open_client(app)
+
+
+def open_client(app) -> TestClient:
+    """TestClient 를 열어 둔다. 요청마다 이벤트 루프를 새로 만들지 않아 Windows 소켓 생성을 줄이고,
+    일부 샌드박스에서 이벤트 루프용 socketpair 생성이 간헐적으로 실패(WinError 10014)하므로 재시도한다."""
     client = TestClient(app)
-    # 요청마다 이벤트 루프를 새로 만들지 않도록 포털을 열어 둔다 (Windows 소켓 생성 최소화).
-    # 일부 샌드박스 환경에서 이벤트 루프용 socketpair 생성이 간헐적으로 실패(WinError 10014)하므로 재시도.
     for attempt in range(5):
         try:
             client.__enter__()
