@@ -49,7 +49,24 @@ def _client_for(factory) -> TestClient:
 
     app.dependency_overrides[get_db] = _get_db
     app.state.session_factory = factory
-    return TestClient(app)
+    client = TestClient(app)
+    # 요청마다 이벤트 루프를 새로 만들지 않도록 포털을 열어 둔다 (Windows 소켓 생성 최소화)
+    client.__enter__()
+    _OPEN_CLIENTS.append(client)
+    return client
+
+
+_OPEN_CLIENTS: list[TestClient] = []
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _close_clients():
+    yield
+    for c in _OPEN_CLIENTS:
+        try:
+            c.__exit__(None, None, None)
+        except Exception:
+            pass
 
 
 def _login(client: TestClient, username: str, password: str) -> dict[str, str]:
