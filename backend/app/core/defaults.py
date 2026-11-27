@@ -103,4 +103,8 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "dataset_notes": {},  # 설비 이름 → 데이터 주의사항 목록 (가져오기 시 기록)
     # 화면 용어 프리셋 (general | injection | diecasting) + 개별 덮어쓰기. 현장 도메인 용어로 화면을 바꾼다
     "terminology": {"preset": "general", "overrides": {}},
+    # 주 설비 이름 → 전체 공정 흐름(단계·설비·조건·시간·검사) — 실시간 시연과 3D 트윈에 사용 (공정 기록 매핑의 line)
+    "process_lines": {},
+    # 설비 이름 → 시간당 생산 능력(CAPA, 개/시간). 없으면 기록된 최대 시간당 생산 수로 추정
+    "capacity": {},
 }

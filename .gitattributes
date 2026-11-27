@@ -1,1 +1,2 @@
 *.bat text eol=crlf
+docker/entrypoint.sh text eol=lf

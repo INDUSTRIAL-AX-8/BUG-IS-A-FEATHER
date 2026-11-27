@@ -10,7 +10,7 @@ rm -rf "$OUT" && mkdir -p "$OUT/wheels"
 echo "[1/4] 소스 복사"; (cd "$ROOT" && git archive --format=tar.gz -o "$OUT/app.tar.gz" HEAD)
 echo "[2/4] 프론트엔드 빌드"; (cd "$ROOT/frontend" && npm ci && npm run build) && cp -r "$ROOT/frontend/dist" "$OUT/frontend_dist"
 echo "[3/4] Python wheel"; python3 -m pip download -r "$ROOT/backend/requirements.lock" -d "$OUT/wheels" \
-  --only-binary=:all: --platform manylinux2014_x86_64 --python-version "${PYTHON_VERSION:-3.11}"
+  --only-binary=:all: --platform manylinux2014_x86_64 --python-version "${PYTHON_VERSION:-3.13}"
 echo "[4/4] Ollama 모델"
 if [ -n "$MODEL" ]; then ollama pull "$MODEL" && cp -r "$HOME/.ollama/models" "$OUT/ollama_models"; fi
 tar -czf "$ROOT/offline_bundle.tar.gz" -C "$OUT" .

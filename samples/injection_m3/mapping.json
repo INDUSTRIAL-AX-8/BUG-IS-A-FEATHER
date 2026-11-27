@@ -67,5 +67,78 @@
     "3월 5일에는 기술자 1명이 쉬었고 다른 1명은 다른 사출기를 보았습니다 (그날 3호는 신입 단독).",
     "이 기록은 3호 사출기 낮 조만 포함합니다. 다른 날, 다른 사출기의 불량은 원인이 다를 수 있습니다."
   ],
-  "terminology": "injection"
+  "terminology": "injection",
+  "line": [
+    {
+      "step": "원료 건조",
+      "seq": 10,
+      "equipment": "제습 건조기 1",
+      "offset_min": -40,
+      "minutes": 30,
+      "conditions": [
+        {
+          "name": "건조 온도",
+          "unit": "℃",
+          "kind": "measured",
+          "mean": 80,
+          "sd": 0.8,
+          "min": 75,
+          "max": 85,
+          "upset_rate": 0.03
+        },
+        {
+          "name": "원료 수분",
+          "unit": "%",
+          "kind": "measured",
+          "mean": 0.015,
+          "sd": 0.002,
+          "max": 0.03,
+          "upset_rate": 0.03
+        }
+      ]
+    },
+    {
+      "step": "사출",
+      "seq": 20,
+      "main": true
+    },
+    {
+      "step": "취출·냉각",
+      "seq": 30,
+      "equipment": "취출 로봇 1",
+      "offset_min": 2,
+      "minutes": 55,
+      "conditions": [
+        {
+          "name": "취출 제품 온도",
+          "unit": "℃",
+          "kind": "measured",
+          "mean": 46,
+          "sd": 1.2,
+          "max": 55,
+          "upset_rate": 0.02
+        }
+      ]
+    },
+    {
+      "step": "외관 검사",
+      "seq": 40,
+      "equipment": "비전 검사기 1",
+      "offset_min": 5,
+      "minutes": 55,
+      "inspection": {
+        "detect_rate": 0.9,
+        "false_rate": 0.004
+      }
+    },
+    {
+      "step": "포장·출하",
+      "seq": 50,
+      "equipment": "포장대 1",
+      "offset_min": 62,
+      "minutes": 15
+    }
+  ],
+  "line_note": "line: 실시간 시연과 3D 트윈에 쓰는 전체 공정 흐름. 사출 외 단계의 조건 평균·산포·허용 범위와 검사 검출률은 현장 표준값(가정)입니다.",
+  "capacity_per_hour": 300
 }

@@ -1,21 +1,24 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { ROLE_LABEL } from '../lib/format'
 import { useTerms, type TermKey } from '../lib/terms'
 import { ChatPanel } from './ChatPanel'
 import { GlobalSearch } from './LotMemo'
-import { useLive } from '../lib/live'
+import { useLive, useLiveRefresh } from '../lib/live'
+import { api } from '../api/client'
 
 const NAV: { to: string; label: string; num: string; term?: TermKey }[] = [
   { to: '/', label: '대시보드', num: '1' },
-  { to: '/drivers', label: '요인 분석', num: '2', term: 'drivers' },
-  { to: '/genealogy', label: '계보 그래프', num: '3', term: 'genealogyGraph' },
-  { to: '/spc', label: '관리도', num: '4' },
-  { to: '/defects', label: '불량 판정', num: '5', term: 'defectJudgment' },
-  { to: '/master', label: '마스터 관리', num: '6' },
-  { to: '/upload', label: '데이터 업로드', num: '7' },
-  { to: '/settings', label: '설정', num: '8' },
+  { to: '/production', label: '생산 대시보드', num: '2' },
+  { to: '/review', label: '불량 의심 검토', num: '3' },
+  { to: '/drivers', label: '요인 분석', num: '4', term: 'drivers' },
+  { to: '/genealogy', label: '계보 그래프', num: '5', term: 'genealogyGraph' },
+  { to: '/spc', label: '관리도', num: '6' },
+  { to: '/defects', label: '불량 판정', num: '7', term: 'defectJudgment' },
+  { to: '/master', label: '마스터 관리', num: '8' },
+  { to: '/upload', label: '데이터 업로드', num: '9' },
+  { to: '/settings', label: '설정', num: '10' },
 ]
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -23,6 +26,10 @@ export function Layout({ children }: { children: ReactNode }) {
   const { t } = useTerms()
   const live = useLive()
   const st = live.status
+  const [pending, setPending] = useState(0)
+  const loadPending = () => { api.get<{ pending_total: number }>('/suspects/summary').then((r) => setPending(r.pending_total)).catch(() => undefined) }
+  useEffect(loadPending, [])
+  useLiveRefresh(loadPending, 500)
   const [chatOpen, setChatOpen] = useState(false)
   return (
     <div className={`app ${chatOpen ? 'with-chat' : ''}`}>
@@ -47,6 +54,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <NavLink key={n.to} to={n.to} end={n.to === '/'}>
             <span className="num">{n.num}</span>
             {n.term ? t(n.term) : n.label}
+            {n.to === '/review' && pending > 0 && <span className="badge warn" style={{ marginLeft: 'auto', height: 18 }}>{pending}</span>}
           </NavLink>
         ))}
         <div className="sep" />

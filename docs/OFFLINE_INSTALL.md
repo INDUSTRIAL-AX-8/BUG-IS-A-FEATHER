@@ -5,13 +5,13 @@
 
 ## 1. 인터넷 되는 PC: 묶음 만들기
 
-준비물: Git, Python 3.11 이상(서버와 같은 메이저·마이너 버전 권장), Node.js 20 이상, (선택) Ollama
+준비물: Git, Python 3.12 이상(3.13 권장, 서버와 같은 메이저·마이너 버전 권장), Node.js 20 이상, (선택) Ollama
 
 ```powershell
 # 대상 서버가 Windows
 powershell -ExecutionPolicy Bypass -File scripts\bundle_offline.ps1 -Model qwen2.5:7b-instruct
 # 대상 서버가 Linux x86_64
-powershell -ExecutionPolicy Bypass -File scripts\bundle_offline.ps1 -TargetLinux -PythonVersion 3.11 -Model qwen2.5:7b-instruct
+powershell -ExecutionPolicy Bypass -File scripts\bundle_offline.ps1 -TargetLinux -PythonVersion 3.13 -Model qwen2.5:7b-instruct
 ```
 
 만들어지는 것 (`offline_bundle.zip`):

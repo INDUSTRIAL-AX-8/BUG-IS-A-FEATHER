@@ -13,6 +13,8 @@ import { DriversPage } from './pages/DriversPage'
 import { TermsProvider } from './lib/terms'
 import { LiveProvider } from './lib/live'
 import { LotsPage } from './pages/LotsPage'
+import { ReviewPage } from './pages/ReviewPage'
+import { ProductionPage } from './pages/ProductionPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SimulationPage } from './pages/SimulationPage'
 import { UploadPage } from './pages/UploadPage'
@@ -31,6 +33,8 @@ export function App() {
         <Route path="/genealogy" element={<GenealogyPage />} />
         <Route path="/drivers" element={<DriversPage />} />
         <Route path="/lots" element={<LotsPage />} />
+        <Route path="/review" element={<ReviewPage />} />
+        <Route path="/production" element={<ProductionPage />} />
         <Route path="/defects" element={<DefectPage />} />
         <Route path="/master" element={<MasterPage />} />
         <Route path="/upload" element={<UploadPage />} />

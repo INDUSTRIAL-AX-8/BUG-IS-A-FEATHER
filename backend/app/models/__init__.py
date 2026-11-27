@@ -1,6 +1,6 @@
 """모든 모델을 여기서 import 해 metadata 에 등록한다 (Alembic autogenerate 용)."""
 
-from app.models.defect import AuditLog, CandidateSnapshot, DefectJudgment, RootCauseConfirmation
+from app.models.defect import AuditLog, CandidateSnapshot, DefectJudgment, DefectSuspect, RootCauseConfirmation
 from app.models.enums import (
     BaselineScope,
     ChartType,
@@ -47,6 +47,7 @@ __all__ = [
     "ConditionValue",
     "ControlLimit",
     "DefectJudgment",
+    "DefectSuspect",
     "DefectType",
     "Equipment",
     "EquipmentEvent",

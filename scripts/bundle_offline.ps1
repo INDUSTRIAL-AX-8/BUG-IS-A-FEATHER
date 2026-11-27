@@ -3,7 +3,7 @@
 # 결과: offline_bundle\ (app 소스, frontend\dist, wheels, ollama 모델 폴더 안내) + offline_bundle.zip
 param(
     [switch]$TargetLinux,          # 대상 서버가 Linux x86_64 이면 지정
-    [string]$PythonVersion = "3.11",
+    [string]$PythonVersion = "3.13",
     [string]$Model = ""            # 함께 반입할 Ollama 모델 (선택)
 )
 $ErrorActionPreference = "Stop"

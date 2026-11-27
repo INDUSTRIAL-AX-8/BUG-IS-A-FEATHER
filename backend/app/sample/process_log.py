@@ -13,6 +13,8 @@
   stop{column, contains, kind, note} : 정지 행 → 설비 이벤트
   caveats[]                      : 데이터 주의사항 → 분석 화면에 그대로 표시
   terminology                    : 화면 용어 프리셋 (general | injection | diecasting)
+  capacity_per_hour              : 주 설비 시간당 생산 능력(CAPA)
+  line[]                         : 전체 공정 흐름 (단계·설비·조건 평균/산포/범위·시간·검사 검출률) — 실시간 시연·3D 트윈용
 
 변환
   한 행 = LOT 하나(수량 = 생산 수) + 공정 처리(run, 작업자) + 작업 조건값 + (특성 지정 시) 측정값
@@ -107,6 +109,33 @@ def _code_for(name: str, codes: dict[str, str]) -> str:
     return ascii_ or f"T{abs(hash(name)) % 10000:04d}"
 
 
+def _register_line(db: Session, mapping: dict[str, Any], main_step: ProcessStep, main_eq: Equipment, user) -> None:
+    """전체 공정 흐름(line)을 마스터(공정 단계·설비·조건 항목)에 등록하고 설정에 저장."""
+    line = []
+    for st in mapping["line"]:
+        if st.get("main"):
+            main_step.seq = st.get("seq", main_step.seq)
+            line.append({"step": main_step.name, "step_id": main_step.id, "equipment": main_eq.name,
+                         "equipment_id": main_eq.id, "main": True})
+            continue
+        step = _get_or_create(db, ProcessStep, {"name": st["step"]}, seq=st.get("seq", 0))
+        step.seq = st.get("seq", step.seq)
+        eq = _get_or_create(db, Equipment, {"name": st["equipment"]}, process_step_id=step.id)
+        conds = []
+        for c in st.get("conditions", []):
+            d = _get_or_create(db, ConditionDefinition, {"name": c["name"], "process_step_id": step.id},
+                               unit=c.get("unit"), min_value=c.get("min"), max_value=c.get("max"))
+            d.value_kind = c.get("kind")
+            conds.append({**c, "id": d.id})
+        line.append({"step": step.name, "step_id": step.id, "equipment": eq.name, "equipment_id": eq.id,
+                     "offset_min": st.get("offset_min", 0), "minutes": st.get("minutes", 10), "conditions": conds,
+                     "inspection": st.get("inspection")})
+    db.commit()
+    lines = dict(get_setting(db, "process_lines"))
+    lines[main_eq.name] = line
+    put_setting(db, "process_lines", lines, user)
+
+
 def import_process_log(db: Session, csv_path: Path, mapping: dict[str, Any], reset: bool = False) -> ProcessLogSummary:
     columns, rows = read_table(Path(csv_path))
     needed = [mapping["produced"], mapping["defects"]] + [c["column"] for c in mapping.get("conditions", [])]
@@ -193,6 +222,12 @@ def import_process_log(db: Session, csv_path: Path, mapping: dict[str, Any], res
         summary.defects += defects
     db.commit()
 
+    if mapping.get("capacity_per_hour"):
+        cap = dict(get_setting(db, "capacity"))
+        cap[eq.name] = float(mapping["capacity_per_hour"])
+        put_setting(db, "capacity", cap, users["operator"])
+    if mapping.get("line"):
+        _register_line(db, mapping, step, eq, users["operator"])
     if mapping.get("terminology"):
         put_setting(db, "terminology", {"preset": mapping["terminology"], "overrides": {}}, users["operator"])
     if mapping.get("caveats"):

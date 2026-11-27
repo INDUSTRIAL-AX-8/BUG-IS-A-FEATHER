@@ -11,15 +11,15 @@ echo   불량 원인 추적 시스템 - 설치 [처음 한 번만]
 echo ============================================================
 echo.
 
-rem ---------- 1. Python 확인 [3.11 이상]
+rem ---------- 1. Python 확인 [3.12 이상]
 set "PY="
-py -3 -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" >nul 2>nul
+py -3 -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" >nul 2>nul
 if not errorlevel 1 set "PY=py -3"
 if defined PY goto :py_ok
-python -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" >nul 2>nul
+python -c "import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)" >nul 2>nul
 if not errorlevel 1 set "PY=python"
 if defined PY goto :py_ok
-echo [오류] Python 3.11 이상이 필요합니다. python.org 에서 설치 후 다시 실행하세요.
+echo [오류] Python 3.12 이상이 필요합니다. python.org 에서 설치 후 다시 실행하세요.
 echo        설치 화면에서 "Add python.exe to PATH" 를 체크하세요.
 goto :fail
 :py_ok

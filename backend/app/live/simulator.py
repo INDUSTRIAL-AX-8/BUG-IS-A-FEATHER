@@ -32,6 +32,7 @@ from app.models import (
     ConditionDefinition,
     ConditionValue,
     DefectJudgment,
+    DefectSuspect,
     DefectType,
     Equipment,
     EquipmentEvent,
@@ -66,6 +67,8 @@ class Profile:
     conds: dict[int, tuple[str, float, float, float | None, float | None, bool]]  # id → (이름, 평균, sd, lo, hi, learned)
     units: dict[str, str | None]
     setpoints: dict[int, float]
+    step_name: str
+    line: list[dict]  # 전체 공정 흐름 (주 설비 단계는 main=True)
     produced: float
     operators: list[str]
     good_types: list[str]
@@ -134,7 +137,10 @@ class LiveSimulator:
         s = self.state
         return {"running": s.running, "equipment_id": s.equipment_id, "equipment": s.equipment, "scenario": s.scenario,
                 "interval_sec": s.interval_sec, "ticks": s.ticks, "sim_time": s.sim_time, "phase": s.phase,
-                "message": s.message, "drift_condition": self._drift_name(), "scenarios": SCENARIOS}
+                "message": s.message, "drift_condition": self._drift_name(), "scenarios": SCENARIOS,
+                "route": [{"step": x["step"], "equipment": x.get("equipment"), "equipment_id": x.get("equipment_id"),
+                           "main": bool(x.get("main")), "inspection": bool(x.get("inspection"))}
+                          for x in (self._profile.line if self._profile else [])]}
 
     def _drift_name(self) -> str | None:
         p = self._profile
@@ -248,40 +254,114 @@ class LiveSimulator:
 
             bad = bool(out_names)
             produced = max(1, round(p.produced))
-            rate = p.rate_bad if bad else p.rate_good
-            defects = min(produced, max(0, round(rng.gauss(rate * produced, max(1.0, (rate * produced) ** 0.5)))))
+            true_rate = p.rate_bad if bad else p.rate_good
             operator = rng.choice(p.operators) if p.operators else None
 
             lot = Lot(lot_no=f"{p.prefix}-{when:%Y%m%d-%H%M}", item_type_id=p.item_type_id, created_at=when,
-                      qty=produced, status=LotStatus.DEFECT if defects >= produced else LotStatus.NORMAL)
+                      qty=produced, status=LotStatus.NORMAL)
             if db.scalar(select(Lot.id).where(Lot.lot_no == lot.lot_no)):
                 lot.lot_no += f"-L{st.ticks}"
             db.add(lot)
             db.flush()
-            run = ProcessRun(lot_id=lot.id, process_step_id=p.step_id, equipment_id=p.equipment_id, started_at=when,
-                             ended_at=when + timedelta(hours=p.step_hours), operator_id=operator)
-            db.add(run)
-            db.flush()
-            char_ids = []
-            for cid, v in values.items():
-                db.add(ConditionValue(process_run_id=run.id, condition_definition_id=cid, value=v))
-                name = p.conds[cid][0]
-                if name in p.chars:
-                    db.add(Measurement(characteristic_id=p.chars[name], process_run_id=run.id, measured_at=when, value=v))
-                    char_ids.append(p.chars[name])
+            inserts: list[dict] = [{"table": "lot", "key": lot.lot_no, "summary": f"수량 {produced}"}]
+            route: list[dict] = []
+            pending: list[DefectSuspect] = []
+            char_ids: list[int] = []
+            main_run_id = None
+            inspection = None
+
+            for stage in p.line:
+                if stage.get("main"):
+                    start, end = when, when + timedelta(hours=p.step_hours)
+                    run = ProcessRun(lot_id=lot.id, process_step_id=p.step_id, equipment_id=p.equipment_id,
+                                     started_at=start, ended_at=end, operator_id=operator)
+                    db.add(run)
+                    db.flush()
+                    main_run_id = run.id
+                    for cid, v in values.items():
+                        db.add(ConditionValue(process_run_id=run.id, condition_definition_id=cid, value=v))
+                        name = p.conds[cid][0]
+                        if name in p.chars:
+                            db.add(Measurement(characteristic_id=p.chars[name], process_run_id=run.id, measured_at=when, value=v))
+                            char_ids.append(p.chars[name])
+                    conds = {p.conds[c][0]: {"value": v, "unit": p.units.get(p.conds[c][0]), "min": p.conds[c][3],
+                                             "max": p.conds[c][4], "learned": p.conds[c][5],
+                                             "out_of_range": p.conds[c][0] in out_names} for c, v in values.items()}
+                    stage_out = list(out_names)
+                    if stage_out:
+                        detail = ", ".join(f"{n} {conds[n]['value']}{conds[n]['unit'] or ''} "
+                                           f"({'학습 ' if conds[n]['learned'] else ''}범위 {_rng_txt(conds[n])})" for n in stage_out)
+                        pending.append(DefectSuspect(lot_id=lot.id, process_step_id=p.step_id, equipment_id=p.equipment_id,
+                                                     source="CONDITION", suspected_qty=None, detail=f"조건 이탈: {detail}",
+                                                     detected_at=end))
+                    inserts.append({"table": "process_run", "key": f"{lot.lot_no}/{stage['step']}",
+                                    "summary": f"{p.equipment} {start:%H:%M}~{end:%H:%M}" + (f" · {operator}" if operator else "")})
+                    inserts.append({"table": "condition_value", "key": f"{lot.lot_no}/{stage['step']}",
+                                    "summary": ", ".join(f"{k} {v['value']}" for k, v in conds.items())})
+                else:
+                    start = when + timedelta(minutes=stage.get("offset_min", 0))
+                    end = start + timedelta(minutes=stage.get("minutes", 10))
+                    run = ProcessRun(lot_id=lot.id, process_step_id=stage["step_id"], equipment_id=stage["equipment_id"],
+                                     started_at=start, ended_at=end)
+                    db.add(run)
+                    db.flush()
+                    conds = {}
+                    stage_out = []
+                    for c in stage.get("conditions") or []:
+                        v = rng.gauss(c.get("mean", 0), c.get("sd", 0.1))
+                        if rng.random() < c.get("upset_rate", 0):  # 가끔 그 단계의 조건이 흔들림
+                            sd = c.get("sd", 0.1)
+                            v = (c["max"] + rng.uniform(1, 3) * sd) if c.get("max") is not None else (c["min"] - rng.uniform(1, 3) * sd)
+                        digits = 3 if abs(c.get("mean", 1)) < 1 else 1
+                        v = round(v, digits)
+                        out = (c.get("min") is not None and v < c["min"]) or (c.get("max") is not None and v > c["max"])
+                        db.add(ConditionValue(process_run_id=run.id, condition_definition_id=c["id"], value=v))
+                        conds[c["name"]] = {"value": v, "unit": c.get("unit"), "min": c.get("min"), "max": c.get("max"),
+                                            "learned": False, "out_of_range": out}
+                        if out:
+                            stage_out.append(c["name"])
+                            true_rate += 0.02  # 다른 단계 이상도 실제 불량을 조금 늘림
+                    if stage_out:
+                        detail = ", ".join(f"{n} {conds[n]['value']}{conds[n]['unit'] or ''} (범위 {_rng_txt(conds[n])})" for n in stage_out)
+                        pending.append(DefectSuspect(lot_id=lot.id, process_step_id=stage["step_id"], equipment_id=stage["equipment_id"],
+                                                     source="CONDITION", suspected_qty=None, detail=f"조건 이탈: {detail}",
+                                                     detected_at=end))
+                    if stage.get("inspection"):
+                        inspection = (stage, run, end)
+                    inserts.append({"table": "process_run", "key": f"{lot.lot_no}/{stage['step']}",
+                                    "summary": f"{stage['equipment']} {start:%H:%M}~{end:%H:%M}"})
+                    if conds:
+                        inserts.append({"table": "condition_value", "key": f"{lot.lot_no}/{stage['step']}",
+                                        "summary": ", ".join(f"{k} {v['value']}" for k, v in conds.items())})
+                route.append({"step": stage["step"], "equipment": stage.get("equipment", p.equipment),
+                              "equipment_id": stage.get("equipment_id", p.equipment_id), "main": bool(stage.get("main")),
+                              "inspection": bool(stage.get("inspection")), "start": start, "end": end,
+                              "conditions": conds, "out_of_range": stage_out})
+
+            # 실제 불량(시연 내부값) → 검사가 걸러 낸 '의심' 수 (검출률·과검출률). 실무자가 확정해야 불량 데이터가 된다
+            true_defects = min(produced, max(0, round(rng.gauss(true_rate * produced, max(1.0, (true_rate * produced) ** 0.5)))))
+            flagged = 0
             top = None
-            if defects > 0:
+            if inspection:
+                stage, run, end = inspection
+                insp = stage["inspection"]
+                caught = sum(1 for _ in range(true_defects) if rng.random() < insp.get("detect_rate", 0.9))
+                false_alarm = sum(1 for _ in range(produced - true_defects) if rng.random() < insp.get("false_rate", 0.0))
+                flagged = caught + false_alarm
+                step_id, eq_id = stage["step_id"], stage["equipment_id"]
+            else:
+                flagged, end, step_id, eq_id = true_defects, when + timedelta(hours=p.step_hours), p.step_id, p.equipment_id
+            if flagged > 0:
                 pool = p.bad_types if bad and p.bad_types else p.good_types
-                top = rng.choice(pool) if pool else "미분류"
-                dtype = db.scalar(select(DefectType).where(DefectType.name == top))
-                judge = db.scalar(select(User.id).where(User.username == "operator"))
-                if dtype is not None:
-                    db.add(DefectJudgment(lot_id=lot.id, defect_type_id=dtype.id, judged_by=judge, judged_at=run.ended_at,
-                                          defect_qty=defects, memo=f"실시간 수집(시연): {defects}/{produced}개, 최다 {top}",
-                                          attachments=[]))
+                top = rng.choice(pool) if pool else None
+                dtype = db.scalar(select(DefectType).where(DefectType.name == top)) if top else None
+                pending.append(DefectSuspect(lot_id=lot.id, process_step_id=step_id, equipment_id=eq_id, source="INSPECTION",
+                                             suspected_qty=flagged, defect_type_id=dtype.id if dtype else None,
+                                             detail=f"검사 불합격 {flagged}/{produced}개" + (f", 주 유형 {top}" if top else ""),
+                                             detected_at=end))
             db.commit()
 
-            # SPC 재계산 → 새 위반 알림
+            # SPC 재계산 → 새 위반은 그 특성 공정의 '관리도 위반' 의심으로
             from app.services.spc_service import recompute_violations
 
             new_violations = []
@@ -293,14 +373,28 @@ class LiveSimulator:
                     if v.id not in before and lot.id in (v.lot_ids or []):
                         new_violations.append({"id": v.id, "characteristic": ch.name, "rule_no": v.rule_no,
                                                "characteristic_id": chid})
+                        pending.append(DefectSuspect(lot_id=lot.id, process_step_id=ch.process_step_id or p.step_id,
+                                                     equipment_id=p.equipment_id, source="SPC", suspected_qty=None,
+                                                     detail=f"관리도 위반: {ch.name} 넬슨룰 R{v.rule_no}",
+                                                     detected_at=when + timedelta(hours=p.step_hours)))
+            db.add_all(pending)
+            db.commit()
+            steps = {s["step_id"]: s["step"] for s in p.line if "step_id" in s}
+            steps.setdefault(p.step_id, p.step_name)
+            suspects = [{"id": x.id, "stage": steps.get(x.process_step_id, "-"), "source": x.source,
+                         "qty": x.suspected_qty, "detail": x.detail} for x in pending]
+            for x in suspects:
+                inserts.append({"table": "defect_suspect", "key": f"{lot.lot_no}#{x['id']}",
+                                "summary": f"[{x['stage']}] {x['detail']}"})
             record = {
                 "type": "record", "at": when, "lot_no": lot.lot_no, "lot_id": lot.id, "equipment": p.equipment,
-                "equipment_id": p.equipment_id, "operator": operator, "produced": produced, "defects": defects,
-                "rate": defects / produced, "top_type": top,
+                "equipment_id": p.equipment_id, "operator": operator, "produced": produced,
+                "suspected": flagged, "defects": flagged, "rate": flagged / produced, "top_type": top,
                 "values": {p.conds[c][0]: v for c, v in values.items()},
                 "limits": {p.conds[c][0]: [p.conds[c][3], p.conds[c][4], p.conds[c][5]] for c in values},
                 "units": p.units,
                 "out_of_range": out_names, "violations": new_violations, "drift_condition": self._drift_name(),
+                "route": route, "suspects": suspects, "inserts": inserts, "main_run_id": main_run_id,
             }
         st.phase = "이상" if bad or new_violations else "정상"
         st.last_record = record
@@ -310,18 +404,31 @@ class LiveSimulator:
         for v in new_violations:
             out_msgs.append({"type": "alarm", "at": when, "lot_no": lot.lot_no, "equipment": p.equipment,
                              "text": f"{v['characteristic']} 넬슨룰 R{v['rule_no']} 위반", **v})
-        if out_names:
-            out_msgs.append({"type": "alarm", "at": when, "lot_no": lot.lot_no, "equipment": p.equipment,
-                             "text": f"{', '.join(out_names)} 허용(학습) 범위 이탈"})
+        for r in route:
+            if r["out_of_range"]:
+                out_msgs.append({"type": "alarm", "at": when, "lot_no": lot.lot_no, "equipment": r["equipment"],
+                                 "text": f"[{r['step']}] {', '.join(r['out_of_range'])} 허용(학습) 범위 이탈"})
         for m in out_msgs:
             self.publish(m)
         return record
 
 
+def _rng_txt(c: dict) -> str:
+    lo, hi = c.get("min"), c.get("max")
+    if lo is not None and hi is not None:
+        return f"{lo:g}~{hi:g}"
+    return f"≤ {hi:g}" if hi is not None else f"≥ {lo:g}" if lo is not None else "-"
+
+
 def build_profile(db: Session, equipment_id: int | None) -> Profile:
     if equipment_id is None:
-        equipment_id = db.scalar(select(ProcessRun.equipment_id).where(ProcessRun.equipment_id.is_not(None))
-                                 .order_by(ProcessRun.started_at.desc()).limit(1))
+        from app.services.settings_service import get_setting
+
+        # 전체 공정 흐름이 등록된 주 설비가 있으면 그것, 없으면 가장 최근 기록의 설비
+        mains = [s.get("equipment_id") for line in get_setting(db, "process_lines").values() for s in line if s.get("main")]
+        equipment_id = next((m for m in mains if m), None) or db.scalar(
+            select(ProcessRun.equipment_id).where(ProcessRun.equipment_id.is_not(None))
+            .order_by(ProcessRun.started_at.desc()).limit(1))
     eq = db.get(Equipment, equipment_id) if equipment_id else None
     if eq is None:
         raise ValueError("실시간 시연에 쓸 설비 기록이 없습니다. 먼저 데모 데이터를 넣으세요.")
@@ -404,10 +511,16 @@ def build_profile(db: Session, equipment_id: int | None) -> Profile:
     rate_good = good_k / good_n if good_n else 0.02
     rate_bad = bad_k / bad_n if bad_n else min(0.5, rate_good * 4 + 0.02)
     chars = {c.name: c.id for c in db.scalars(select(Characteristic).where(Characteristic.process_step_id == runs[-1].process_step_id))}
+    from app.models import ProcessStep
+    from app.services.settings_service import get_setting
+
+    step_name = db.get(ProcessStep, runs[-1].process_step_id).name
+    line = get_setting(db, "process_lines").get(eq.name) or [{"step": step_name, "main": True}]
     return Profile(
         equipment_id=eq.id, equipment=eq.name, lot_id_template=template, step_id=runs[-1].process_step_id,
         item_type_id=template.item_type_id, prefix=prefix, step_hours=step_hours, shift=shift, conds=conds,
-        units={defs[c].name: defs[c].unit for c in conds}, setpoints=setpoints, produced=produced, operators=operators, good_types=[t for t, _ in good_types.most_common(5)],
+        units={defs[c].name: defs[c].unit for c in conds}, setpoints=setpoints, produced=produced,
+        step_name=step_name, line=line, operators=operators, good_types=[t for t, _ in good_types.most_common(5)],
         bad_types=[t for t, _ in bad_types.most_common(3)], drift_cond=drift, rate_good=rate_good,
         rate_bad=max(rate_bad, rate_good * 2), chars=chars,
     )

@@ -42,11 +42,11 @@ export function LivePanel() {
       tooltip: { trigger: 'axis', textStyle: { fontFamily: CHART_FONT, fontSize: 12 } },
       xAxis: { type: 'category', data: x, ...AXIS_STYLE, axisLabel: { ...AXIS_STYLE.axisLabel, hideOverlap: true } },
       yAxis: [
-        { type: 'value', name: '불량률 %', nameTextStyle: { fontSize: 11 }, ...AXIS_STYLE },
+        { type: 'value', name: '의심률 %', nameTextStyle: { fontSize: 11 }, ...AXIS_STYLE },
         { type: 'value', name: drift, scale: true, nameTextStyle: { fontSize: 11 }, ...AXIS_STYLE, splitLine: { show: false } },
       ],
       series: [
-        { name: '불량률', type: 'bar', data: recs.map((r) => ({ value: +(r.rate * 100).toFixed(2), itemStyle: { color: r.out_of_range.length ? '#e3a49e' : '#a9c1e2' } })) },
+        { name: '의심률', type: 'bar', data: recs.map((r) => ({ value: +(r.rate * 100).toFixed(2), itemStyle: { color: r.out_of_range.length ? '#e3a49e' : '#a9c1e2' } })) },
         { name: drift, type: 'line', yAxisIndex: 1, data: recs.map((r) => r.values[drift]), symbolSize: 5, lineStyle: { color: '#1d4580', width: 2 }, itemStyle: { color: '#1d4580' },
           markLine: lim && (lim[0] != null || lim[1] != null) ? { symbol: 'none', silent: true, label: { formatter: lim[2] ? '학습 경계' : '허용 경계', fontSize: 11 }, lineStyle: { color: '#a8261d', type: 'dashed' },
             data: [lim[1] != null ? { yAxis: lim[1] } : { yAxis: lim[0] as number }] } : undefined },
@@ -80,7 +80,8 @@ export function LivePanel() {
                   <button onClick={() => call('/live/maintenance')} title="다음 기록에 정비 정지를 넣고 값을 정상으로 되돌립니다">정비 실시</button>
                   <button className="danger" onClick={() => call('/live/stop')}>정지</button>
                 </>}
-            <Link to="/simulation" className="right">3D 디지털 트윈에서 보기</Link>
+            <Link to="/review" className="right">불량 의심 검토</Link>
+            <Link to="/simulation">3D 디지털 트윈에서 보기</Link>
           </div>
         ) : <div className="faint" style={{ fontSize: 12.5 }}>실시간 수집 시작·정지는 실무자 이상이 할 수 있습니다.</div>}
         {msg && <div className="notice error">{msg}</div>}
@@ -88,7 +89,7 @@ export function LivePanel() {
         <div className="grid cols-2" style={{ alignItems: 'start' }}>
           <div className="table-wrap" style={{ maxHeight: 220 }}>
             <table className="t">
-              <thead><tr><th style={{ width: 92 }}>시각</th><th>{t('lot')}</th>{drift && <th className="num">{drift}</th>}<th className="num">불량</th></tr></thead>
+              <thead><tr><th style={{ width: 92 }}>시각</th><th>{t('lot')}</th>{drift && <th className="num">{drift}</th>}<th className="num">불량 의심</th></tr></thead>
               <tbody>
                 {[...recs].reverse().slice(0, 15).map((r, i) => (
                   <tr key={r.lot_id} className={`${r.out_of_range.length ? 'feed-row-alarm' : ''} ${i === 0 ? 'flash' : ''}`}>

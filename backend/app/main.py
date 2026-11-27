@@ -30,6 +30,8 @@ def _routers() -> list[APIRouter]:
         "app.api.accuracy",
         "app.api.analysis",
         "app.api.live",
+        "app.api.suspects",
+        "app.api.production",
     ):
         try:
             module = __import__(module_name, fromlist=["router"])

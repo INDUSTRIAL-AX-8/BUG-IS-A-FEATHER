@@ -25,6 +25,7 @@ from app.auth.provider import create_user
 from app.models import (
     AuditLog,
     CandidateSnapshot,
+    DefectSuspect,
     Characteristic,
     ConditionDefinition,
     ConditionValue,
@@ -105,7 +106,7 @@ class Scenario:
 
 
 _WIPE_ORDER = [
-    CandidateSnapshot, RootCauseConfirmation, DefectJudgment, SpcViolation, ControlLimit,
+    CandidateSnapshot, RootCauseConfirmation, DefectSuspect, DefectJudgment, SpcViolation, ControlLimit,
     ForecastResult, EquipmentEvent, LotNote, Measurement, ConditionValue, ProcessRun, GenealogyEdge, Lot,
     ProductDesignComponent, ProductDesignStep, ProductDesign, Characteristic, ConditionDefinition,
     Equipment, ProcessStep, DefectType, ItemType, MappingTemplate, Setting, AuditLog,

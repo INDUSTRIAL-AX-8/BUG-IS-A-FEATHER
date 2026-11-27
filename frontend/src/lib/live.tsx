@@ -19,6 +19,11 @@ export interface LiveRecord {
   out_of_range: string[]
   violations: { id: number; characteristic: string; characteristic_id: number; rule_no: number }[]
   drift_condition: string | null
+  suspected: number
+  route: { step: string; equipment: string; equipment_id: number; main: boolean; inspection: boolean; start: string; end: string;
+    conditions: Record<string, { value: number; unit: string | null; min: number | null; max: number | null; learned: boolean; out_of_range: boolean }>; out_of_range: string[] }[]
+  suspects: { id: number; stage: string; source: string; qty: number | null; detail: string }[]
+  inserts: { table: string; key: string; summary: string }[]
 }
 export interface LiveAlarm { type: 'alarm'; at: string; lot_no: string; equipment: string; text: string }
 export interface LiveEquipmentEvent { type: 'equipment_event'; at: string; kind: string; equipment: string; equipment_id: number; note: string | null }
@@ -26,8 +31,10 @@ export interface LiveStatus {
   running: boolean; equipment_id: number | null; equipment: string | null; scenario: string; interval_sec: number
   ticks: number; sim_time: string | null; phase: string; message: string | null; drift_condition: string | null
   scenarios: Record<string, string>
+  route: { step: string; equipment: string | null; equipment_id: number | null; main: boolean; inspection: boolean }[]
 }
-export type LiveMessage = LiveRecord | LiveAlarm | LiveEquipmentEvent | ({ type: 'status' } & LiveStatus)
+export interface LiveReview { type: 'review'; suspect_id: number; lot_id: number; lot_no: string; status: 'CONFIRMED' | 'REJECTED'; qty: number; at: string }
+export type LiveMessage = LiveRecord | LiveAlarm | LiveEquipmentEvent | LiveReview | ({ type: 'status' } & LiveStatus)
 
 interface LiveState {
   connected: boolean
@@ -62,7 +69,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       listeners.current.forEach((fn) => fn(m))
     }
-    for (const t of ['status', 'record', 'alarm', 'equipment_event']) es.addEventListener(t, handle as EventListener)
+    for (const t of ['status', 'record', 'alarm', 'equipment_event', 'review']) es.addEventListener(t, handle as EventListener)
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     return () => es.close()
@@ -87,7 +94,7 @@ export function useLiveRefresh(fn: () => void, delayMs = 800) {
   useEffect(() => {
     let t: number | undefined
     const off = subscribe((m) => {
-      if (m.type !== 'record' && m.type !== 'equipment_event') return
+      if (m.type !== 'record' && m.type !== 'equipment_event' && m.type !== 'review') return
       window.clearTimeout(t)
       t = window.setTimeout(() => ref.current(), delayMs)
     })

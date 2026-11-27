@@ -34,6 +34,35 @@ class DefectJudgment(Base):
     defect_type: Mapped[DefectType] = relationship()
 
 
+class DefectSuspect(Base):
+    """불량 의심 — 실시간 수집·검사에서 자동으로 걸린 것. 실무자가 확정해야 불량 판정(DefectJudgment)이 된다.
+
+    stage  : 의심이 나온 공정 단계 (예: 사출, 외관 검사)
+    source : CONDITION(조건 이탈) / SPC(관리도 위반) / INSPECTION(검사 불합격) / MANUAL
+    """
+
+    __tablename__ = "defect_suspect"
+    __table_args__ = (Index("ix_defect_suspect_status_stage", "status", "process_step_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lot_id: Mapped[int] = mapped_column(ForeignKey("lot.id"), index=True)
+    process_step_id: Mapped[int | None] = mapped_column(ForeignKey("process_step.id"))
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"))
+    source: Mapped[str] = mapped_column(String(20))
+    suspected_qty: Mapped[float | None] = mapped_column(Float)  # null = LOT 전체 검토 필요
+    defect_type_id: Mapped[int | None] = mapped_column(ForeignKey("defect_type.id"))  # 추정 유형
+    detail: Mapped[str | None] = mapped_column(String(500))
+    detected_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")  # PENDING / CONFIRMED / REJECTED
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    review_note: Mapped[str | None] = mapped_column(String(500))
+    confirmed_qty: Mapped[float | None] = mapped_column(Float)
+    judgment_id: Mapped[int | None] = mapped_column(ForeignKey("defect_judgment.id"))
+
+    lot: Mapped[Lot] = relationship()
+
+
 class RootCauseConfirmation(Base):
     __tablename__ = "root_cause_confirmation"
     __table_args__ = (Index("ix_rcc_node", "node_type", "node_id"),)

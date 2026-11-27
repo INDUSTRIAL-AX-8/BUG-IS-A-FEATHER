@@ -6,10 +6,11 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Equipment, ProcessStep } from '../api/types'
 import { Help } from '../components/Help'
+import { RtdbPanel } from '../components/RtdbPanel'
 import { Empty, Level, PageHead, Panel } from '../components/ui'
 import { fmtDateTime, fmtPct } from '../lib/format'
 import { useAsync } from '../lib/hooks'
-import { useLive, type LiveMessage } from '../lib/live'
+import { useLive, type LiveMessage, type LiveRecord, type LiveReview } from '../lib/live'
 import { useTerms } from '../lib/terms'
 
 // ------------------------------------------------------------------ 모델
@@ -31,8 +32,9 @@ interface Token { id: string; label: string; color: string; from: THREE.Vector3;
 interface Totals { produced: number; defects: number }
 
 const SPACING = 9
-const SHIP: [number, number, number] = [0, 0, -5]
-const REJECT: [number, number, number] = [0, 0, 5]
+const SHIP: [number, number, number] = [0, 0, -6]
+const HOLD: [number, number, number] = [0, 0, 0]
+const REJECT: [number, number, number] = [0, 0, 6]
 const MAX_TOKENS = 80
 
 function rateColor(r: number): string {
@@ -41,7 +43,7 @@ function rateColor(r: number): string {
   return '#3d9a63'
 }
 
-function layout(steps: ProcessStep[], equipment: Equipment[], usedStations: Set<string>): { stations: Station[]; ship: [number, number, number]; reject: [number, number, number] } {
+function layout(steps: ProcessStep[], equipment: Equipment[], usedStations: Set<string>): { stations: Station[]; ship: [number, number, number]; hold: [number, number, number]; reject: [number, number, number] } {
   const order = [...steps].sort((a, b) => a.seq - b.seq)
   const stations: Station[] = []
   let col = 0
@@ -59,7 +61,7 @@ function layout(steps: ProcessStep[], equipment: Equipment[], usedStations: Set<
     col++
   }
   const endX = Math.max(0, ...stations.map((s) => s.pos[0])) + SPACING * 0.9
-  return { stations, ship: [endX, 0, SHIP[2]], reject: [endX, 0, REJECT[2]] }
+  return { stations, ship: [endX, 0, SHIP[2]], hold: [endX, 0, HOLD[2]], reject: [endX, 0, REJECT[2]] }
 }
 
 function stationOf(ev: { equipment?: { id: number } | null; step?: string | null }, steps: ProcessStep[]): string | null {
@@ -77,11 +79,13 @@ class TwinEngine {
   log: { at: number; text: string; level: 'ok' | 'warn' | 'danger' }[] = []
   shipCount = 0
   rejectCount = 0
-  constructor(public stations: Station[], public ship: THREE.Vector3, public reject: THREE.Vector3) {}
+  holdCount = 0
+  held = new Map<number, number>()  // 검토 대기 중인 LOT → 수량
+  constructor(public stations: Station[], public ship: THREE.Vector3, public reject: THREE.Vector3, public hold: THREE.Vector3 = new THREE.Vector3()) {}
 
   reset() {
     this.machines.clear(); this.tokens = []; this.lotAt.clear(); this.totals = { produced: 0, defects: 0 }
-    this.log = []; this.shipCount = 0; this.rejectCount = 0
+    this.log = []; this.shipCount = 0; this.rejectCount = 0; this.holdCount = 0; this.held.clear()
   }
   m(key: string): MachineState {
     let s = this.machines.get(key)
@@ -152,6 +156,72 @@ class TwinEngine {
     }
     if (rate >= 0.08) this.addLog(simMs, `${lotNo} 불량률 ${fmtPct(rate)} (${defects}/${produced})`, 'danger')
   }
+  /** 실시간: 한 기록을 전체 공정 순서대로 흘려 보낸다. 의심이 있으면 검토 대기 구역으로. */
+  flowRecord(m: LiveRecord, stageMs: number, onStep: () => void) {
+    const route = m.route?.length ? m.route : [{ step: '', equipment: m.equipment, equipment_id: m.equipment_id, main: true, inspection: false, start: m.at, end: m.at, conditions: {}, out_of_range: m.out_of_range }]
+    const id = `lot-${m.lot_id}`
+    const ms = Date.parse(m.at)
+    let prev: THREE.Vector3 | null = null
+    route.forEach((st, i) => {
+      window.setTimeout(() => {
+        const key = `eq:${st.equipment_id}`
+        const s = this.m(key)
+        if (!(s.stopUntil && ms < s.stopUntil)) {
+          s.values = st.conditions as Record<string, CondVal>
+          s.lot = m.lot_no; s.lastAt = ms
+          s.operator = st.main ? m.operator : null
+          s.status = st.out_of_range.length ? 'alarm' : 'run'
+          s.alarm = st.out_of_range.length ? `${st.out_of_range.join(', ')} 범위 이탈` : null
+          if (st.out_of_range.length) this.addLog(ms, `[${st.step}] ${s.alarm} (${m.lot_no})`, 'danger')
+        }
+        const to = this.posOf(key)
+        if (to) {
+          const from: THREE.Vector3 = prev ?? to.clone().add(new THREE.Vector3(-4, 3, 0))
+          const tinted = m.suspects.some((x) => x.source !== 'INSPECTION' && route.findIndex((r2) => r2.step === x.stage) <= i)
+          this.spawn({ id, label: m.lot_no, color: tinted ? '#d59a2b' : '#8fa7c6', from, to, start: performance.now(), dur: stageMs * 0.8, size: 0.8 })
+          prev = to
+        }
+        if (st.inspection) {
+          const insp = m.suspects.filter((x) => x.source === 'INSPECTION')
+          for (const x of insp) {
+            if (to) this.spawn({ id: `sus-${x.id}`, label: `의심 ${x.qty}`, color: '#d59a2b', from: to, to: this.hold.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.5, (Math.random() - 0.5) * 2)), start: performance.now(), dur: stageMs, size: 0.5 })
+            this.held.set(x.id, x.qty ?? 0)
+            this.holdCount += x.qty ?? 0
+            this.addLog(ms, `[${st.step}] 검사 불합격 ${x.qty}개 → 검토 대기 (${m.lot_no})`, 'warn')
+          }
+        }
+        onStep()
+      }, i * stageMs)
+    })
+    // 마지막 단계 뒤: 조건 이탈·관리도 의심이 있으면 LOT 전체 보류(검토 대기), 아니면 출하
+    window.setTimeout(() => {
+      const whole = m.suspects.filter((x) => x.source !== 'INSPECTION')
+      const flagged = m.suspects.filter((x) => x.source === 'INSPECTION').reduce((a, x) => a + (x.qty ?? 0), 0)
+      this.totals.produced += m.produced
+      if (prev) {
+        if (whole.length) {
+          this.spawn({ id, label: `${m.lot_no} 보류`, color: '#d59a2b', from: prev, to: this.hold.clone().add(new THREE.Vector3(0, 0.6, (Math.random() - 0.5) * 2)), start: performance.now(), dur: stageMs, size: 0.9 })
+          for (const x of whole) { this.held.set(x.id, 0); this.addLog(ms, `[${x.stage}] ${x.detail} → ${m.lot_no} 보류·검토 대기`, 'warn') }
+        } else {
+          this.spawn({ id, label: `${m.lot_no} ${m.produced - flagged}`, color: '#3d9a63', from: prev, to: this.ship.clone().add(new THREE.Vector3(0, 0.6, (Math.random() - 0.5) * 3)), start: performance.now(), dur: stageMs, size: 0.9 })
+          this.shipCount += m.produced - flagged
+        }
+      }
+      onStep()
+    }, route.length * stageMs)
+  }
+  /** 실무자 판단: 검토 대기 → 불량(확정) 또는 출하(불량 아님) */
+  review(m: LiveReview, stageMs: number) {
+    const qty = this.held.get(m.suspect_id) ?? 0
+    this.held.delete(m.suspect_id)
+    this.holdCount = Math.max(0, this.holdCount - qty)
+    const confirmed = m.status === 'CONFIRMED'
+    if (confirmed) { this.rejectCount += m.qty; this.totals.defects += m.qty } else this.shipCount += qty
+    this.spawn({ id: `rev-${m.suspect_id}`, label: confirmed ? `불량 ${m.qty}` : '양품', color: confirmed ? '#c8423a' : '#3d9a63',
+      from: this.hold.clone().add(new THREE.Vector3(0, 0.6, 0)), to: (confirmed ? this.reject : this.ship).clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.5, (Math.random() - 0.5) * 2)),
+      start: performance.now(), dur: stageMs, size: 0.6 })
+    this.addLog(Date.parse(m.at), `${m.lot_no} ${confirmed ? `불량 확정 ${m.qty}개 → 불량 적재` : '불량 아님 → 출하'}`, confirmed ? 'danger' : 'ok')
+  }
   decay(simMs: number) {
     for (const s of this.machines.values()) {
       if (s.status === 'stop' && s.stopUntil && simMs >= s.stopUntil) { s.status = 'idle'; s.stopUntil = null }
@@ -167,6 +237,8 @@ export function SimulationPage() {
   const steps = useAsync(() => api.get<ProcessStep[]>('/process-steps'), [])
   const equipment = useAsync(() => api.get<Equipment[]>('/equipment'), [])
   const range = useAsync(() => api.get<{ from: string | null; to: string | null }>('/events/range'), [])
+  const lines = useAsync(() => api.get<Record<string, { equipment_id?: number }[]>>('/settings/process_lines'), [])
+  const lineEq = useMemo(() => Object.values(lines.data ?? {}).flat().map((x) => x.equipment_id).filter((x): x is number => !!x), [lines.data])
   const [days, setDays] = useState(3)
   const [mode, setMode] = useState<'replay' | 'live'>(live.status?.running ? 'live' : 'replay')
   useEffect(() => { if (live.status?.running) setMode('live') }, [live.status?.running])
@@ -197,13 +269,13 @@ export function SimulationPage() {
         </div>
       </PageHead>
       {events.data
-        ? <Twin key={`${mode}-${window_?.from}`} mode={mode} steps={steps.data} equipment={equipment.data} events={events.data} window={window_!} />
+        ? <Twin key={`${mode}-${window_?.from}-${lineEq.join(',')}`} mode={mode} steps={steps.data} equipment={equipment.data} events={events.data} window={window_!} lineEq={lineEq} />
         : <Panel><div className="empty">이벤트 불러오는 중…</div></Panel>}
     </>
   )
 }
 
-function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment: Equipment[]; events: Ev[]; window: { from: number; to: number } }) {
+function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment: Equipment[]; events: Ev[]; window: { from: number; to: number }; lineEq: number[] }) {
   const { t } = useTerms()
   const live = useLive()
   const sorted = useMemo(() => props.events.map((e) => ({ ...e, ms: Date.parse(e.at) })).sort((a, b) => a.ms - b.ms), [props.events])
@@ -211,10 +283,12 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
     const s = new Set<string>()
     for (const e of sorted) { const k = stationOf(e, props.steps); if (k) s.add(k) }
     if (live.status?.equipment_id) s.add(`eq:${live.status.equipment_id}`)
+    for (const id of props.lineEq) s.add(`eq:${id}`)
+    for (const x of live.status?.route ?? []) if (x.equipment_id) s.add(`eq:${x.equipment_id}`)
     return s
-  }, [sorted, props.steps, live.status?.equipment_id])
+  }, [sorted, props.steps, live.status?.equipment_id, live.status?.route, props.lineEq])
   const lay = useMemo(() => layout(props.steps, props.equipment, used), [props.steps, props.equipment, used])
-  const engine = useMemo(() => new TwinEngine(lay.stations, new THREE.Vector3(...lay.ship), new THREE.Vector3(...lay.reject)), [lay])
+  const engine = useMemo(() => new TwinEngine(lay.stations, new THREE.Vector3(...lay.ship), new THREE.Vector3(...lay.reject), new THREE.Vector3(...lay.hold)), [lay])
   // run_start 에 실린 생산·불량 수를 run_end 에서 쓰기 위한 표
   const runInfo = useMemo(() => {
     const m = new Map<number, Ev>()
@@ -261,20 +335,14 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
     const off = live.subscribe((m: LiveMessage) => {
       const now = performance.now()
       if (m.type === 'record') {
-        const key = `eq:${m.equipment_id}`
-        const conds: Record<string, CondVal> = {}
-        for (const [name, v] of Object.entries(m.values)) {
-          const [lo, hi, learned] = m.limits[name] ?? [null, null, false]
-          conds[name] = { value: v, unit: m.units[name] ?? null, min: lo, max: hi, learned, out_of_range: m.out_of_range.includes(name) }
-        }
         const ms = Date.parse(m.at)
-        engine.apply({ type: 'run_start', at: m.at, lot_no: m.lot_no, lot_id: m.lot_id, equipment: { id: m.equipment_id, name: m.equipment }, operator: m.operator, conditions: conds }, key, now, ms, true, stepDur)
-        window.setTimeout(() => {
-          engine.finishLot(m.lot_id, m.lot_no, key, m.produced, m.defects, performance.now(), ms, true, stepDur)
-          for (const v of m.violations) engine.apply({ type: 'violation', at: m.at, characteristic: v.characteristic, rule_no: v.rule_no, lot_ids: [m.lot_id] }, null, performance.now(), ms, true, stepDur)
-          force((x) => x + 1)
-        }, stepDur * 0.6)
+        const stages = Math.max(1, m.route?.length ?? 1)
+        const stageMs = Math.max(250, Math.min(900, ((live.status?.interval_sec ?? 2) * 1000 * 0.85) / (stages + 1)))
+        engine.flowRecord(m, stageMs, () => force((x) => x + 1))
+        for (const v of m.violations) engine.addLog(ms, `${v.characteristic} 넬슨룰 R${v.rule_no} 위반 (${m.lot_no})`, 'danger')
         sim.current.ms = ms
+      } else if (m.type === 'review') {
+        engine.review(m, 700)
       } else if (m.type === 'equipment_event') {
         engine.apply({ type: 'equipment_event', at: m.at, kind: m.kind, note: m.note }, `eq:${m.equipment_id}`, now, Date.parse(m.at), true, stepDur)
       }
@@ -295,8 +363,8 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
   return (
     <div className="split-right" style={{ gridTemplateColumns: 'minmax(0,1fr) 330px' }}>
       <Panel flush>
-        <div style={{ position: 'relative', height: 'calc(100vh - 250px)', minHeight: 420, background: '#11161d' }}>
-          <Canvas camera={{ position: [lay.ship[0] / 2 - 2, 9 + lay.stations.length * 1.5, 12 + lay.stations.length * 2], fov: 45 }} dpr={[1, 2]}>
+        <div style={{ position: 'relative', height: 'calc(100vh - 230px)', minHeight: 480, background: '#11161d' }}>
+          <Canvas camera={{ position: [lay.ship[0] / 2, 5 + lay.ship[0] * 0.34, 8 + lay.ship[0] * 0.5], fov: 45 }} dpr={[1, 2]}>
             <color attach="background" args={['#11161d']} />
             <ambientLight intensity={0.55} />
             <directionalLight position={[10, 20, 10]} intensity={1.1} />
@@ -310,7 +378,8 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
             {lay.stations.length > 0 && <Belt from={lay.stations[lay.stations.length - 1].pos} to={lay.ship} />}
             {machines.map(({ s, st }) => <Machine key={s.key} station={s} state={st} />)}
             <Bin pos={lay.ship} label={`출하 ${engine.shipCount.toLocaleString()}`} color="#2f6d4a" />
-            <Bin pos={lay.reject} label={`불량 ${engine.rejectCount.toLocaleString()}`} color="#7a2a25" />
+            <Bin pos={lay.reject} label={`불량 적재 ${engine.rejectCount.toLocaleString()}`} color="#7a2a25" />
+            {props.mode === 'live' && <Bin pos={lay.hold} label={`검토 대기 ${engine.holdCount.toLocaleString()}${engine.held.size ? ` (${engine.held.size}건)` : ''}`} color="#8a6416" />}
             <Tokens engine={engine} />
             <OrbitControls makeDefault target={[lay.ship[0] / 2, 0, 0]} maxPolarAngle={Math.PI / 2.1} />
           </Canvas>
@@ -320,7 +389,7 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
             <div>생산 {engine.totals.produced.toLocaleString()} · 불량 {engine.totals.defects.toLocaleString()} ({fmtPct(rate)})</div>
           </div>
           <div style={{ position: 'absolute', right: 10, bottom: 10, color: '#9aa6b5', fontSize: 12, background: 'rgba(17,22,29,0.8)', padding: '4px 8px', borderRadius: 3 }}>
-            드래그 회전 · 휠 확대 · 우클릭 이동 | ● 정상 ■ 정지 ▲ 이상
+            드래그 회전 · 휠 확대 · 우클릭 이동 | 설비 ● 정상 ■ 정지 ▲ 이상 | 트레이 초록=출하 주황=검토 대기 빨강=불량
           </div>
         </div>
         {props.mode === 'replay' && (
@@ -335,6 +404,7 @@ function Twin(props: { mode: 'replay' | 'live'; steps: ProcessStep[]; equipment:
         )}
       </Panel>
       <div className="stack">
+        {props.mode === 'live' && <RtdbPanel height={250} />}
         <Panel title={`${t('equipment')} 상태`} flush>
           <table className="t">
             <tbody>
