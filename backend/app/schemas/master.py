@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models import ChartType, ItemCategory
+from app.models import BaselineScope, ChartType, ItemCategory
 
 
 class ORM(BaseModel):
@@ -85,6 +85,7 @@ class CharacteristicIn(BaseModel):
     lsl: float | None = None
     subgroup_size: int = Field(default=1, ge=1)
     chart_type: ChartType = ChartType.AUTO
+    baseline_scope: BaselineScope = BaselineScope.GLOBAL
     rule_config: dict[str, RuleSetting] | None = None
     item_type_id: int | None = None
     process_step_id: int | None = None
@@ -117,6 +118,7 @@ class CharacteristicOut(ORM):
     lsl: float | None
     subgroup_size: int
     chart_type: ChartType
+    baseline_scope: BaselineScope
     rule_config: dict[str, Any] | None
     item_type_id: int | None
     process_step_id: int | None

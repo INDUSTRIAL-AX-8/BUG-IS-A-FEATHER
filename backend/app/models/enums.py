@@ -17,6 +17,11 @@ class ChartType(str, enum.Enum):
     XBAR_S = "XBAR_S"
 
 
+class BaselineScope(str, enum.Enum):
+    GLOBAL = "GLOBAL"  # 전체 데이터 하나의 관리한계 (기준 구간 고정 가능)
+    PARENT_LOT = "PARENT_LOT"  # 상위 LOT(런·배치·용탕 등 체제)별 기준선 — KAMP 런별 기준선 방식
+
+
 class LotStatus(str, enum.Enum):
     NORMAL = "NORMAL"  # 정상
     HOLD = "HOLD"  # 보류

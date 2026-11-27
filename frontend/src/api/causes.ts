@@ -50,6 +50,7 @@ export interface Candidate {
   score: number
   rank: number
   contributions: Record<string, number>
+  specificity?: { exposure_share: number | null; factor: number; note: string }
   factors: Record<string, Factor>
 }
 

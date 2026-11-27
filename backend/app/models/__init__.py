@@ -2,6 +2,7 @@
 
 from app.models.defect import AuditLog, CandidateSnapshot, DefectJudgment, RootCauseConfirmation
 from app.models.enums import (
+    BaselineScope,
     ChartType,
     ForecastStatus,
     ItemCategory,
@@ -35,6 +36,7 @@ from app.models.transaction import (
 )
 
 __all__ = [
+    "BaselineScope",
     "AuditLog",
     "CandidateSnapshot",
     "Characteristic",

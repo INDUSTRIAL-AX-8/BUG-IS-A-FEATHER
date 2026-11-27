@@ -2,6 +2,7 @@
 
     python -m app.cli init-db              # 마이그레이션 적용 + 초기 관리자 생성
     python -m app.cli seed-sample [--seed 42] [--reset]
+    python -m app.cli seed-kamp --raw-dir <KAMP data/raw 경로> [--reset]
     python -m app.cli serve
 """
 
@@ -43,6 +44,10 @@ def main(argv: list[str] | None = None) -> None:
     seed = sub.add_parser("seed-sample", help="샘플 데이터 생성")
     seed.add_argument("--seed", type=int, default=42)
     seed.add_argument("--reset", action="store_true", help="기존 트랜잭션/마스터 데이터를 지우고 생성")
+    kamp = sub.add_parser("seed-kamp", help="KAMP 다이캐스팅 실데이터 가져오기")
+    kamp.add_argument("--raw-dir", default=get_settings().kamp_raw_dir,
+                      help="casting_equipment.csv, casting_quality.csv 가 있는 폴더")
+    kamp.add_argument("--reset", action="store_true", help="기존 데이터를 지우고 가져오기")
     sub.add_parser("serve", help="서버 실행")
     args = parser.parse_args(argv)
 
@@ -60,6 +65,22 @@ def main(argv: list[str] | None = None) -> None:
             run_all(db)
         print("샘플 데이터 생성 완료.")
         for key, value in scenario.summary().items():
+            print(f"  {key}: {value}")
+    elif args.cmd == "seed-kamp":
+        from pathlib import Path
+
+        from app.db import SessionLocal
+        from app.sample.kamp_casting import import_kamp
+        from app.services.forecast_service import run_all
+
+        if not args.raw_dir:
+            parser.error("--raw-dir 를 지정하거나 설정 [kamp] raw_dir 를 채우세요.")
+        with SessionLocal() as db:
+            summary = import_kamp(db, Path(args.raw_dir), reset=args.reset)
+            print("ARIMA 예측 실행 중…")
+            run_all(db)
+        print("KAMP 데이터 가져오기 완료.")
+        for key, value in summary.summary().items():
             print(f"  {key}: {value}")
     elif args.cmd == "serve":
         import uvicorn

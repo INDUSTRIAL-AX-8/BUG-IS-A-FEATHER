@@ -62,6 +62,7 @@ export interface Characteristic {
   lsl: number | null
   subgroup_size: number
   chart_type: 'AUTO' | 'IMR' | 'XBAR_R' | 'XBAR_S'
+  baseline_scope: 'GLOBAL' | 'PARENT_LOT'
   rule_config: Record<string, RuleSetting> | null
   item_type_id: number | null
   process_step_id: number | null
@@ -114,6 +115,8 @@ export interface ChartPoint {
   dispersion: number | null
   ucl: number
   lcl: number
+  center: number
+  regime: number | null
   lot_ids: number[]
   lot_nos: (string | null)[]
   rules: number[]
@@ -130,6 +133,7 @@ export interface ChartData {
     subgroup_size: number
   }
   chart_type: string
+  baseline_scope: 'GLOBAL' | 'PARENT_LOT'
   provisional: boolean
   message: string | null
   limits: {

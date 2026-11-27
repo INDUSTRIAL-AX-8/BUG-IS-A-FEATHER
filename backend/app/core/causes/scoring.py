@@ -8,7 +8,9 @@
   design    (e) 설계(ProductDesign)와 실제 투입/공정이 다른가
   history   (f) 같은 노드/같은 ItemType 이 같은 불량 유형의 원인으로 확정된 이력
 
-종합 점수 = Σ wᵢ·sᵢ / Σ wᵢ  (0~1). 기여도 = wᵢ·sᵢ / Σ wᵢ.
+종합 점수 = Σ wᵢ·sᵢ / Σ wᵢ × 공통 경로 보정 (0~1). 기여도 = wᵢ·sᵢ / Σ wᵢ × 보정.
+공통 경로 보정: 분석 기간 완제품 대부분(기본 90% 이상)이 거치는 노드는 비교할 대상이 없어
+구분력이 없으므로 점수를 비례해서 낮춘다 (전부 거치면 0).
 """
 
 from __future__ import annotations
@@ -50,8 +52,10 @@ def lift_stats(
     exposed_defects: int, exposed_n: int, other_defects: int, other_n: int, alpha: float, beta: float
 ) -> LiftStats:
     """Beta(alpha, beta) 사전분포로 평활한 불량률 비와 Fisher 정확 검정(단측, 노출군이 더 큼) p-value."""
-    if exposed_n <= 0:
-        return LiftStats(0, 0, other_n, other_defects, None, None, None, None, None)
+    if exposed_n <= 0 or other_n <= 0:
+        # 노출군 또는 비교군이 없으면 비교 자체가 불가 → 중립 (모든 제품이 거치는 노드 등)
+        rate_e = exposed_defects / exposed_n if exposed_n > 0 else None
+        return LiftStats(exposed_n, exposed_defects, other_n, other_defects, rate_e, None, None, None, None)
     rate_e = exposed_defects / exposed_n
     rate_o = other_defects / other_n if other_n > 0 else None
     raw = (rate_e / rate_o) if rate_o else None
@@ -69,6 +73,18 @@ def lift_score(stats: LiftStats, saturation: float) -> float:
     if stats.smoothed_lift is None or saturation <= 1:
         return 0.0
     return clamp01((stats.smoothed_lift - 1.0) / (saturation - 1.0))
+
+
+def common_path_factor(share: float | None, threshold: float) -> float:
+    """노출 비율(share)이 threshold 이상인 '공통 경로' 노드는 구분력이 없으므로 점수를 낮춘다.
+
+    share < threshold → 1.0, share = 1 → 0.0, 그 사이는 선형.
+    """
+    if share is None or threshold >= 1:
+        return 1.0
+    if share < threshold:
+        return 1.0
+    return clamp01((1.0 - share) / (1.0 - threshold))
 
 
 def spc_score(rule_kinds: int, saturation: int) -> float:

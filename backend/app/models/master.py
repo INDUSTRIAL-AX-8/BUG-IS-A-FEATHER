@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.models.enums import ChartType, ItemCategory
+from app.models.enums import BaselineScope, ChartType, ItemCategory
 
 
 def _enum(e):
@@ -95,6 +95,9 @@ class Characteristic(Base):
     lsl: Mapped[float | None] = mapped_column(Float)
     subgroup_size: Mapped[int] = mapped_column(Integer, default=1)
     chart_type: Mapped[ChartType] = mapped_column(_enum(ChartType), default=ChartType.AUTO)
+    baseline_scope: Mapped[BaselineScope] = mapped_column(
+        _enum(BaselineScope), default=BaselineScope.GLOBAL, server_default=BaselineScope.GLOBAL.value
+    )
     # {"1": {"enabled": true, "params": {...}}, ...}; null 이면 전역 기본값
     rule_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     item_type_id: Mapped[int | None] = mapped_column(ForeignKey("item_type.id"), index=True)

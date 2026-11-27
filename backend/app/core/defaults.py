@@ -25,6 +25,7 @@ CONTROL_CHART: dict[str, Any] = {
     "xbar_r_max_n": 9,  # 2 <= n <= 9 → Xbar-R, 그 이상 → Xbar-S
     "min_baseline_subgroups": 20,
     "recompute_interval_minutes": 60,  # SPC 위반 재계산 주기 (스케줄러)
+    "min_regime_subgroups": 30,  # 체제별 기준선: 이보다 적은 체제는 전체 기준선 사용 (KAMP min_ref)
 }
 
 # 원인 후보 점수 가중치 (a)~(f)
@@ -49,6 +50,7 @@ CAUSE_SCORING: dict[str, Any] = {
     "history_saturation": 3.0,  # 가중 확정 횟수가 이 값이면 (f) 점수 1.0
     "history_type_weight": 0.3,  # 같은 ItemType(다른 LOT) 확정 1건의 가중치
     "design_ratio_tolerance": 0.05,  # 설계에 허용 오차가 없을 때 기본값
+    "common_share_threshold": 0.9,  # 완제품의 이 비율 이상이 거치는 노드는 '공통 경로'로 보고 점수 감쇠
 }
 
 FORECAST: dict[str, Any] = {

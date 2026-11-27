@@ -13,7 +13,9 @@ from app.core.spc.charts import ChartError, ChartPoint, Limits, Subgroup, chart_
 from app.core.spc.nelson import Violation, describe, evaluate, merge_config
 from app.errors import AppError, not_found
 from app.models import (
+    BaselineScope,
     Characteristic,
+    GenealogyEdge,
     ChartType,
     ControlLimit,
     Lot,
@@ -52,7 +54,25 @@ def load_subgroups(
         lot_id = m.lot_id or run_lot
         if lot_id is not None and lot_id not in sg.lot_ids:
             sg.lot_ids.append(lot_id)
-    return sorted(groups.values(), key=lambda s: (s.time, s.key))
+    out = sorted(groups.values(), key=lambda s: (s.time, s.key))
+    if char.baseline_scope == BaselineScope.PARENT_LOT:
+        _assign_regimes(db, out)
+    return out
+
+
+def _assign_regimes(db: Session, subgroups: list[Subgroup]) -> None:
+    """서브그룹의 체제 = 측정 LOT 의 상위 LOT (여러 개면 ID 가 가장 작은 것). 상위가 없으면 LOT 자신."""
+    lot_ids = sorted({sg.lot_ids[0] for sg in subgroups if sg.lot_ids})
+    parent: dict[int, int] = {}
+    for i in range(0, len(lot_ids), 500):
+        chunk = lot_ids[i : i + 500]
+        for child, par in db.execute(
+            select(GenealogyEdge.child_lot_id, GenealogyEdge.parent_lot_id).where(GenealogyEdge.child_lot_id.in_(chunk))
+        ):
+            parent[child] = min(par, parent.get(child, par))
+    for sg in subgroups:
+        if sg.lot_ids:
+            sg.regime = parent.get(sg.lot_ids[0], sg.lot_ids[0])
 
 
 def resolved_chart_type(db: Session, char: Characteristic) -> ChartType:
@@ -92,6 +112,8 @@ def analyze(db: Session, char: Characteristic, subgroups: list[Subgroup] | None 
     chart_type = resolved_chart_type(db, char)
     if subgroups is None:
         subgroups = load_subgroups(db, char)
+    if char.baseline_scope == BaselineScope.PARENT_LOT:
+        return _analyze_by_regime(db, char, chart_type, subgroups)
     row = locked_limit(db, char.id)
     limits: Limits | None = None
     message = None
@@ -116,6 +138,59 @@ def analyze(db: Session, char: Characteristic, subgroups: list[Subgroup] | None 
         message = "산포가 0 이라 관리한계를 계산할 수 없습니다."
     return SpcState(char, chart_type, subgroups, limits, row, provisional, message, points,
                     violations, rule_config)
+
+
+def _analyze_by_regime(db: Session, char: Characteristic, chart_type: ChartType,
+                       subgroups: list[Subgroup]) -> SpcState:
+    """체제(상위 LOT)별 기준선: 체제마다 그 체제 데이터로 관리한계를 계산하고 룰도 체제 안에서만 판정.
+
+    KAMP 주조 분석의 '런별 기준선'을 범용화한 방식. 런(용탕·배치)마다 공정 수준이 달라
+    전체 하나의 한계를 쓰면 수준 차이가 전부 위반으로 잡히는 문제를 막는다.
+    """
+    cc = get_setting(db, "control_chart")
+    min_n = cc["min_regime_subgroups"]
+    rule_config = merge_config(get_setting(db, "nelson_rules"), char.rule_config)
+    groups: OrderedDict[object, list[Subgroup]] = OrderedDict()
+    for sg in subgroups:
+        groups.setdefault(sg.regime, []).append(sg)
+    try:
+        fallback = compute_limits(subgroups, chart_type, char.subgroup_size) if subgroups else None
+    except ChartError:
+        fallback = None
+
+    points: list[ChartPoint] = []
+    violations: list[Violation] = []
+    last_limits: Limits | None = None
+    small = 0
+    ordered: list[Subgroup] = []
+    for regime_sgs in groups.values():
+        lim = None
+        if len(regime_sgs) >= min_n:
+            try:
+                lim = compute_limits(regime_sgs, chart_type, char.subgroup_size)
+            except ChartError:
+                lim = None
+        if lim is None or lim.sigma <= 0:
+            small += 1
+            lim = fallback
+        if lim is None or lim.sigma <= 0:
+            continue
+        offset = len(points)
+        local = chart_points(regime_sgs, lim)
+        for p in local:
+            p.index += offset
+        points.extend(local)
+        ordered.extend(regime_sgs)
+        for v in evaluate([p.value for p in local], [p.z for p in local], rule_config):
+            v.first_index += offset
+            v.last_index += offset
+            v.points = [i + offset for i in v.points]
+            violations.append(v)
+        last_limits = lim
+    message = f"상위 LOT(체제)별 기준선 {len(groups)}개를 사용합니다."
+    if small:
+        message += f" 데이터가 {min_n}개 미만인 체제 {small}개는 전체 기준선으로 판정합니다."
+    return SpcState(char, chart_type, ordered, last_limits, None, True, message, points, violations, rule_config)
 
 
 def recompute_violations(db: Session, char: Characteristic) -> int:
@@ -174,6 +249,8 @@ def lock_limits(
 ) -> ControlLimit:
     if baseline_from >= baseline_to:
         raise AppError(422, "기준 구간의 시작이 끝보다 앞서야 합니다.")
+    if char.baseline_scope == BaselineScope.PARENT_LOT:
+        raise AppError(409, "상위 LOT(체제)별 기준선을 쓰는 특성은 관리한계를 고정할 수 없습니다. 기준선 범위를 '전체'로 바꾼 뒤 고정하세요.")
     if chart_type is not None and chart_type != char.chart_type:
         before_char = audit.snapshot(char)
         char.chart_type = chart_type
@@ -241,6 +318,8 @@ def chart_payload(db: Session, char_id: int, start: datetime | None, end: dateti
             "dispersion": p.dispersion,
             "ucl": p.ucl,
             "lcl": p.lcl,
+            "center": p.center,
+            "regime": p.subgroup.regime,
             "lot_ids": p.subgroup.lot_ids,
             "lot_nos": [lot_nos.get(i) for i in p.subgroup.lot_ids],
             "rules": sorted(set(marks.get(p.index, []))),
@@ -253,6 +332,7 @@ def chart_payload(db: Session, char_id: int, start: datetime | None, end: dateti
             "item_type_id": char.item_type_id, "process_step_id": char.process_step_id,
         },
         "chart_type": state.chart_type,
+        "baseline_scope": char.baseline_scope.value,
         "provisional": state.provisional,
         "message": state.message,
         "limits": None if lim is None else {

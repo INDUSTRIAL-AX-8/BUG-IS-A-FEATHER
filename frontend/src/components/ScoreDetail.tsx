@@ -34,6 +34,7 @@ export function ScoreDetail({ c, labels }: { c: Candidate; labels: Record<string
           })}
         </tbody>
       </table>
+      {c.specificity?.note && <div className="notice warn" style={{ fontSize: 12 }}>공통 경로 보정: {c.specificity.note}</div>}
     </div>
   )
 }

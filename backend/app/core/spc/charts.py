@@ -45,6 +45,7 @@ class Subgroup:
     values: list[float]
     lot_ids: list[int] = field(default_factory=list)
     measurement_ids: list[int] = field(default_factory=list)
+    regime: int | None = None  # 체제(상위 LOT) 키 — 체제별 기준선용
 
     @property
     def n(self) -> int:
@@ -136,6 +137,7 @@ class ChartPoint:
     z: float
     ucl: float
     lcl: float
+    center: float = 0.0
 
 
 def chart_points(subgroups: Sequence[Subgroup], limits: Limits) -> list[ChartPoint]:
@@ -146,9 +148,9 @@ def chart_points(subgroups: Sequence[Subgroup], limits: Limits) -> list[ChartPoi
         for i, (sg, v) in enumerate(flat):
             s = limits.point_sigma(1)
             z = (v - limits.center) / s if s > 0 else 0.0
-            single = Subgroup(sg.key, sg.time, [v], sg.lot_ids, sg.measurement_ids)
+            single = Subgroup(sg.key, sg.time, [v], sg.lot_ids, sg.measurement_ids, sg.regime)
             points.append(ChartPoint(i, single, v, None if prev is None else abs(v - prev), z,
-                                     limits.ucl, limits.lcl))
+                                     limits.ucl, limits.lcl, limits.center))
             prev = v
         return points
 
@@ -157,5 +159,5 @@ def chart_points(subgroups: Sequence[Subgroup], limits: Limits) -> list[ChartPoi
         z = (sg.mean - limits.center) / s if s > 0 else 0.0
         disp = sg.range if limits.chart_type == ChartType.XBAR_R else sg.std
         points.append(ChartPoint(i, sg, sg.mean, disp if sg.n > 1 else None, z,
-                                 limits.center + SIGMA_K * s, limits.center - SIGMA_K * s))
+                                 limits.center + SIGMA_K * s, limits.center - SIGMA_K * s, limits.center))
     return points

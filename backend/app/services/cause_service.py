@@ -25,6 +25,7 @@ from app.core.causes.scoring import (
     FACTORS,
     FactorResult,
     combine,
+    common_path_factor,
     design_mismatch,
     history_score,
     lift_score,
@@ -162,8 +163,10 @@ def analyze(
         if ntype == NodeType.CONDITION and not any(nid in r.out_of_range for r in runs):
             # 이 불량의 경로에서 이탈이 없었다면 다른 시점의 이탈과 연관 지을 근거가 없다
             lift = FactorResult(0.0, {"exposed_n": 0}, "이 불량의 추적 경로에서는 허용 범위 이탈 없음")
+            share = None
         else:
             lift = _lift_factor(ctx, seeds, desc_cache)
+            share = lift.raw["exposed_n"] / len(ctx.population) if ctx.population else None
         factors = {
             "spc": _spc_factor(ctx, ntype, nid, runs, seeds, violations),
             "lift": lift,
@@ -173,11 +176,21 @@ def analyze(
             "history": _history_factor(ctx, ntype, nid, history),
         }
         total, contrib = combine(factors, weights)
+        spec = common_path_factor(share, cfg["common_share_threshold"])
+        if spec < 1.0:
+            total *= spec
+            contrib = {k: v * spec for k, v in contrib.items()}
         node = next(n for n in graph["nodes"] if n["id"] == key)
         candidates.append({
             "node": key, "type": ntype.value, "label": node["label"], "sub": node.get("sub", ""),
             "score": round(total, 6),
             "contributions": {k: round(v, 6) for k, v in contrib.items()},
+            "specificity": {
+                "exposure_share": None if share is None else round(share, 4),
+                "factor": round(spec, 4),
+                "note": (f"분석 기간 완제품의 {share:.0%}가 거치는 공통 경로 노드라 점수를 {spec:.2f}배로 낮춤"
+                         if spec < 1.0 else ""),
+            },
             "factors": {k: {"label": FACTOR_LABELS[k], "score": round(f.score, 6), "raw": f.raw, "note": f.note}
                         for k, f in factors.items()},
         })
@@ -231,6 +244,8 @@ def _lift_factor(ctx: Context, seeds: set[int], cache: dict) -> FactorResult:
     }
     if st.exposed_n == 0:
         note = "이 노드를 거친 완제품이 분석 기간에 없음"
+    elif st.other_n == 0:
+        note = f"분석 기간 완제품 {st.exposed_n}개 전부가 거쳐 비교군이 없음"
     else:
         note = (f"거친 제품 {st.exposed_defects}/{st.exposed_n} 불량 vs 거치지 않은 제품 "
                 f"{st.other_defects}/{st.other_n}" + (f", p={st.p_value:.3g}" if st.p_value is not None else ""))
@@ -245,21 +260,19 @@ def _load_violations(ctx: Context) -> list[tuple[int, int, set[int], datetime]]:
 
 
 def _spc_factor(ctx, ntype, nid, runs, seeds, violations) -> FactorResult:
+    """이 불량의 추적 경로에서 그 노드가 처리한(또는 그 노드인) LOT 에 걸린 위반만 본다.
+
+    설비·공정 노드도 '기간 안 전체 LOT' 이 아니라 경로상의 LOT 로 한정한다. 한 설비가 모든 제품을
+    처리하는 라인에서 기간 전체 위반을 모으면 항상 최대점이 되어 구분력이 없어지기 때문이다.
+    """
     if ntype == NodeType.CONDITION:
         return FactorResult(0.0, {"applicable": False}, "조건 항목은 SPC 대상 아님")
-    if ntype == NodeType.STEP:
-        step_chars = {c.id for c in ctx.db.scalars(select(Characteristic).where(Characteristic.process_step_id == nid))}
-        if not runs:
-            hits = []
-        else:
-            s, e = _eq_window(ctx, runs)
-            hits = [(c, r) for c, r, _, t in violations if c in step_chars and s <= t <= e]
-    else:
-        targets = {nid} if ntype == NodeType.LOT else seeds
-        hits = [(c, r) for c, r, lots, _ in violations if lots & targets]
+    targets = {nid} if ntype == NodeType.LOT else {r.lot_id for r in runs}
+    hits = [(c, r) for c, r, lots, _ in violations if lots & targets]
     rules = sorted({r for _, r in hits})
-    raw = {"violations": len(hits), "rules": rules, "characteristics": len({c for c, _ in hits})}
-    note = f"위반 {len(hits)}건, 룰 {', '.join('R%d' % r for r in rules)}" if hits else "관련 위반 없음"
+    raw = {"violations": len(hits), "rules": rules, "characteristics": len({c for c, _ in hits}),
+           "path_lots": len(targets)}
+    note = f"경로상 LOT 위반 {len(hits)}건, 룰 {', '.join('R%d' % r for r in rules)}" if hits else "경로상 위반 없음"
     return FactorResult(spc_score(len(rules), ctx.cfg["spc_rule_saturation"]), raw, note)
 
 

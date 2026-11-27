@@ -19,6 +19,7 @@ export function GenealogyPage() {
   const [input, setInput] = useState(lotNo)
   const [depth, setDepth] = useState(Number(params.get('depth')) || 6)
   const [types, setTypes] = useState<Set<NodeKind>>(new Set(ALL_TYPES))
+  const [hideNormalConds, setHideNormalConds] = useState(true)
   const [selected, setSelected] = useState<string | null>(null)
   const [downNode, setDownNode] = useState<GraphNode | null>(null)
   const direction = downNode ? 'down' : 'up'
@@ -35,9 +36,10 @@ export function GenealogyPage() {
 
   const shown = useMemo(() => {
     if (!a) return { nodes: [], edges: [] }
-    const nodes = a.graph.nodes.filter((n) => n.id === a.graph.root || types.has(n.type))
+    const nodes = a.graph.nodes.filter((n) => n.id === a.graph.root || (types.has(n.type)
+      && !(hideNormalConds && n.type === 'CONDITION' && !n.out_of_range)))
     return { nodes, edges: a.graph.edges }
-  }, [a, types])
+  }, [a, types, hideNormalConds])
 
   const go = (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -79,6 +81,10 @@ export function GenealogyPage() {
                     {NODE_LABEL[t]}
                   </label>
                 ))}
+                <label className="check" title="허용 범위 안인 조건 노드는 숨깁니다">
+                  <input type="checkbox" checked={hideNormalConds} onChange={(e) => setHideNormalConds(e.target.checked)} />
+                  이탈 조건만
+                </label>
               </div>
             </Field>
           )}

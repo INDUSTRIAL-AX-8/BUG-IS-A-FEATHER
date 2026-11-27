@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     llm_num_ctx: int = 8192
     llm_timeout_seconds: float = 120.0
 
+    # [kamp] KAMP 다이캐스팅 원본 CSV 폴더 (seed-kamp 기본값)
+    kamp_raw_dir: str | None = None
+
     # [scheduler]
     scheduler_enabled: bool = True
 

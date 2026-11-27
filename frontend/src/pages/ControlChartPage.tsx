@@ -77,12 +77,15 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
         actions={<button className="small" onClick={chart.reload}>새로고침</button>}
       >
         <div className="row wrap" style={{ marginBottom: 8, gap: 16, fontSize: 13 }}>
+          {d.baseline_scope === 'PARENT_LOT' && <span className="muted">마지막 체제 기준 →</span>}
           <span>CL <b>{fmtNum(d.limits?.center)}</b></span>
           <span>UCL <b>{fmtNum(d.limits?.ucl)}</b></span>
           <span>LCL <b>{fmtNum(d.limits?.lcl)}</b></span>
           <span className="muted">USL {fmtNum(c.usl)} · LSL {fmtNum(c.lsl)} · Target {fmtNum(c.target)}</span>
           <span className="right">
-            {d.provisional
+            {d.baseline_scope === 'PARENT_LOT'
+              ? <span className="badge neutral">· 상위 LOT(체제)별 기준선</span>
+              : d.provisional
               ? <span className="badge warn">■ 임시 한계</span>
               : <span className="badge ok">● 고정 한계 v{d.limits?.version} ({fmtDateTime(d.limits?.baseline_from)} ~ {fmtDateTime(d.limits?.baseline_to)})</span>}
           </span>
@@ -116,7 +119,7 @@ function ChartView({ charId, onChanged }: { charId: number; onChanged: () => voi
           </div>
         </Panel>
         <div className="stack">
-          {can('ADMIN') && <BaselineForm charId={charId} onDone={() => { chart.reload(); onChanged() }} />}
+          {can('ADMIN') && d.baseline_scope === 'GLOBAL' && <BaselineForm charId={charId} onDone={() => { chart.reload(); onChanged() }} />}
           <RulePanel key={charId} charId={charId} rules={d.rules} editable={can('ADMIN')} onDone={() => { chart.reload(); onChanged() }} />
         </div>
       </div>
@@ -129,6 +132,7 @@ function buildOptions(d: ChartData): { main: EChartsOption; disp: EChartsOption 
   const x = d.points.map((p) => fmtDateTime(p.time))
   const c = d.characteristic
   const lim = d.limits
+  const perRegime = d.baseline_scope === 'PARENT_LOT'
   const specLines: object[] = []
   if (c.usl !== null) specLines.push({ yAxis: c.usl, name: 'USL', lineStyle: { color: '#a8261d', type: 'dashed' }, label: { formatter: 'USL', color: '#a8261d' } })
   if (c.lsl !== null) specLines.push({ yAxis: c.lsl, name: 'LSL', lineStyle: { color: '#a8261d', type: 'dashed' }, label: { formatter: 'LSL', color: '#a8261d' } })
@@ -154,7 +158,10 @@ function buildOptions(d: ChartData): { main: EChartsOption; disp: EChartsOption 
     grid: { left: 64, right: 56, top: 16, bottom: 28 },
     tooltip,
     xAxis: { type: 'category', data: x, ...AXIS_STYLE, axisLabel: { ...AXIS_STYLE.axisLabel, hideOverlap: true } },
-    yAxis: { type: 'value', scale: true, min: Math.min(...allY) - pad, max: Math.max(...allY) + pad, ...AXIS_STYLE },
+    yAxis: {
+      type: 'value', scale: true, min: Math.min(...allY) - pad, max: Math.max(...allY) + pad, ...AXIS_STYLE,
+      axisLabel: { ...AXIS_STYLE.axisLabel, formatter: (v: number) => fmtNum(v, 3), showMinLabel: false, showMaxLabel: false },
+    },
     dataZoom: [{ type: 'inside' }],
     series: [
       {
@@ -163,12 +170,13 @@ function buildOptions(d: ChartData): { main: EChartsOption; disp: EChartsOption 
         markLine: {
           symbol: 'none', silent: true,
           label: { fontFamily: CHART_FONT, fontSize: 11, position: 'end' },
-          data: lim ? [
+          data: lim && !perRegime ? [
             { yAxis: lim.center, lineStyle: { color: '#2c6e49' }, label: { formatter: 'CL' } },
             ...specLines,
           ] : specLines,
         },
       },
+      ...(perRegime ? [{ name: 'CL', type: 'line', step: 'middle', data: d.points.map((p) => p.center), symbol: 'none', lineStyle: { color: '#2c6e49', width: 1 }, silent: true }] : []),
       { name: 'UCL', type: 'line', step: 'middle', data: d.points.map((p) => p.ucl), symbol: 'none', lineStyle: { color: '#24508f', width: 1 }, silent: true },
       { name: 'LCL', type: 'line', step: 'middle', data: d.points.map((p) => p.lcl), symbol: 'none', lineStyle: { color: '#24508f', width: 1 }, silent: true },
       {

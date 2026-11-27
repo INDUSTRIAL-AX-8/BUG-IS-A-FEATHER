@@ -50,7 +50,9 @@ def choose_d(values: np.ndarray, max_d: int, alpha: float) -> list[int]:
         if len(series) < 10 or np.allclose(series, series[0]):
             return [d]
         try:
-            p = adfuller(series, autolag="AIC")[1]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                p = adfuller(series, autolag="AIC")[1]
         except Exception:
             p = 1.0
         if p < alpha:
