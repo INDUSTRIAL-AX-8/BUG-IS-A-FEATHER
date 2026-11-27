@@ -7,6 +7,20 @@
 - 명세: [SPEC_불량원인추적.md](SPEC_불량원인추적.md)
 - 설계: [docs/DESIGN.md](docs/DESIGN.md)
 
+## 가장 쉬운 실행 (Windows)
+
+1. **`set_up.bat`** 더블클릭 — 처음 한 번만. Python 가상환경·패키지 설치, 설정 파일 생성, 화면 빌드, DB 준비, 데모 데이터 선택
+   (1 사출기 3호 / 2 합성 시나리오 / 3 KAMP 실데이터 / 4 건너뛰기). `offline_bundle\wheels` 가 있으면 인터넷 없이 설치합니다.
+2. **`run.bat`** 더블클릭 — 서버가 켜지고 브라우저가 `http://localhost:8000` 을 엽니다. 끄려면 창에서 Ctrl+C. 다른 포트는 `run.bat 8080`.
+
+필요한 것: Python 3.11 이상(설치 시 "Add python.exe to PATH" 체크), 화면 빌드용 Node.js 20 이상(빌드된 `frontend\dist` 를 복사해 오면 불필요).
+
+| 테스트 계정 | 비밀번호 | 역할 |
+|---|---|---|
+| admin | admin1234 | 관리자 (`config\config.toml` 의 초기값 — 운영 전 변경) |
+| operator | operator1234 | 실무자 (데모 데이터와 함께 생성) |
+| viewer | viewer1234 | 조회자 (데모 데이터와 함께 생성) |
+
 ## 폐쇄망 설치
 
 인터넷 되는 PC 에서 묶고 폐쇄망 서버로 옮겨 설치하는 전체 절차(pip wheel, 프론트 빌드 산출물, Ollama 모델 반입)는

@@ -49,7 +49,7 @@ export function DefectPage() {
       const r = await api.post<{ judgment: Judgment; analysis: CauseAnalysis }>('/defects', { lot_no: lot.lot_no, defect_type_id: typeId, memo: memo || null })
       setResult(r)
       setDetail(0)
-      setMsg({ kind: 'ok', text: `${lot.lot_no} 불량 판정을 저장했습니다.` })
+      setMsg({ kind: 'ok', text: `${lot.lot_no} ${t('defectJudgment')}을 저장했습니다.` })
       setLot(null)
       setLotNo('')
       setMemo('')
@@ -68,7 +68,7 @@ export function DefectPage() {
       <div className="grid cols-2">
         <div className="stack">
           <Panel title={`${t('defectJudgment')} 입력`}>
-            {!can('OPERATOR') && <div className="notice warn" style={{ marginBottom: 8 }}>조회자는 판정을 저장할 수 없습니다.</div>}
+            {!can('OPERATOR') && <div className="notice warn" style={{ marginBottom: 8 }}>조회자는 {t('judge')}할 수 없습니다.</div>}
             <form onSubmit={lookup} className="row" style={{ alignItems: 'end' }}>
               <Field label={t('lotNo')} style={{ flex: 1 }}>
                 <input ref={lotRef} className="big" value={lotNo} onChange={(e) => setLotNo(e.target.value)} placeholder="스캔하거나 입력 후 Enter" />
@@ -80,7 +80,7 @@ export function DefectPage() {
                 <div className="row wrap">
                   <b>{lot.lot_no}</b><span className="muted">{lot.item_type_name}</span><StatusBadge status={lot.status} />
                   <span className="muted">생성 {fmtDateTime(lot.created_at)}</span>
-                  {lot.judgment_count > 0 && <span className="badge warn">■ 기존 판정 {lot.judgment_count}건</span>}
+                  {lot.judgment_count > 0 && <span className="badge warn">■ 기존 {t('judge')} {lot.judgment_count}건</span>}
                 </div>
                 <div className="form-grid">
                   <Field label="불량 유형">
@@ -92,7 +92,7 @@ export function DefectPage() {
                   <Field label="메모"><input value={memo} onChange={(e) => setMemo(e.target.value)} /></Field>
                 </div>
                 <div className="row">
-                  <button className="primary" disabled={!typeId || busy || !can('OPERATOR')} onClick={save}>{busy ? '저장 중…' : '불량 판정 저장'}</button>
+                  <button className="primary" disabled={!typeId || busy || !can('OPERATOR')} onClick={save}>{busy ? '저장 중…' : `${t('defectJudgment')} 저장`}</button>
                   <button onClick={() => { setLot(null); setLotNo(''); lotRef.current?.focus() }}>취소</button>
                 </div>
               </div>
@@ -120,11 +120,11 @@ export function DefectPage() {
           )}
         </div>
 
-        <Panel title="최근 판정" flush>
+        <Panel title={`최근 ${t('judge')}`} flush>
           <Loading error={recent.error} loading={recent.loading && !recent.data} />
           <div className="table-wrap" style={{ maxHeight: 'calc(100vh - 180px)' }}>
             <table className="t">
-              <thead><tr><th style={{ width: 130 }}>판정 시각</th><th>{t('lot')}</th><th>불량 유형</th><th style={{ width: 80 }}>판정자</th><th>확정 원인</th></tr></thead>
+              <thead><tr><th style={{ width: 130 }}>{t('judge')} 시각</th><th>{t('lot')}</th><th>불량 유형</th><th style={{ width: 80 }}>{t('judge')}자</th><th>확정 원인</th></tr></thead>
               <tbody>
                 {(recent.data ?? []).map((j) => (
                   <tr key={j.id}>
@@ -139,7 +139,7 @@ export function DefectPage() {
                 ))}
               </tbody>
             </table>
-            {recent.data && recent.data.length === 0 && <Empty>판정 내역이 없습니다.</Empty>}
+            {recent.data && recent.data.length === 0 && <Empty>{t('judge')} 내역이 없습니다.</Empty>}
           </div>
         </Panel>
       </div>

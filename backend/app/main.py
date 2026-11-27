@@ -103,7 +103,8 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
         candidate = (dist / path).resolve()
         if path and candidate.is_file() and dist.resolve() in candidate.parents:
             return FileResponse(candidate)
-        return FileResponse(index)  # SPA 라우팅
+        # index.html 은 캐시하지 않는다 (업데이트 후 옛 번들이 남지 않게). 해시가 붙은 assets 는 캐시 가능
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})  # SPA 라우팅
 
 
 app = create_app()
