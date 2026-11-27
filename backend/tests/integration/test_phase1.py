@@ -172,3 +172,31 @@ def test_spa_fallback_and_missing_files(tmp_path, monkeypatch):
     assert c.get("/sw.js").status_code == 404
     assert c.get("/service-worker.js").status_code == 404
     assert c.get("/api/nope").status_code == 404
+
+
+def test_alembic_upgrade_keeps_existing_rows(tmp_path):
+    """데이터가 있는 DB 를 올려도 깨지지 않는다 (SQLite 는 외래키를 켜 둔 상태에서 표를 다시 만들면 실패).
+    0.x 운영 DB(예: Docker 볼륨)에 LOT·계보가 있는 채로 새 마이그레이션을 적용하는 상황."""
+    from alembic import command
+    from sqlalchemy import text
+
+    from app.cli import alembic_config
+    from app.db import make_engine
+
+    url = f"sqlite:///{(tmp_path / 'm.db').as_posix()}"
+    command.upgrade(alembic_config(url), "40fc832634f0")
+    engine = make_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO item_type (id, name, category, is_active) VALUES (1, '제품', 'FINISHED', 1)"))
+        for i in (1, 2):
+            conn.execute(text("INSERT INTO lot (id, lot_no, item_type_id, created_at, status) VALUES (:i, :n, 1, '2026-03-04 08:00:00', 'NORMAL')"),
+                         {"i": i, "n": f"L{i}"})
+        conn.execute(text("INSERT INTO genealogy_edge (parent_lot_id, child_lot_id) VALUES (1, 2)"))
+    engine.dispose()
+    command.upgrade(alembic_config(url), "head")
+    engine = make_engine(url)
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT lot_no, is_simulated FROM lot ORDER BY id")).all()
+        assert rows == [("L1", 0), ("L2", 0)]
+        assert conn.execute(text("SELECT count(*) FROM genealogy_edge")).scalar() == 1
+    engine.dispose()
